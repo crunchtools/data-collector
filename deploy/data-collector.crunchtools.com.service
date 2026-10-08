@@ -1,0 +1,20 @@
+[Unit]
+Description=data-collector: collect a hostile feed and record Trentina's verdicts
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# A run is 3,600 model calls at six at a time; an hour is generous.
+TimeoutStartSec=5400
+ExecStartPre=-/usr/bin/podman rm -f data-collector.crunchtools.com
+ExecStartPre=/usr/bin/podman pull -q quay.io/crunchtools/data-collector:latest
+ExecStart=/usr/bin/podman run \
+    --rm \
+    --name data-collector.crunchtools.com \
+    --memory=2g --memory-swap=2g \
+    --read-only --tmpfs /tmp \
+    --cap-drop=all --security-opt=no-new-privileges \
+    --env-file /srv/data-collector.crunchtools.com/config/collector.env \
+    -v /srv/data-collector.crunchtools.com/data:/data:Z \
+    quay.io/crunchtools/data-collector:latest run

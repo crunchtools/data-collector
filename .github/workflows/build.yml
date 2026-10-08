@@ -1,0 +1,121 @@
+name: Build and Push Container Image
+
+# Tests, then the image, then the image's own check, then the push. The image
+# is built on Trentina's and is only ever built here: nothing is built or
+# pushed from a workstation.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]  # Build and test only; the push steps below are gated
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday rebuild
+  workflow_dispatch:
+
+env:
+  QUAY_IMAGE: quay.io/crunchtools/data-collector
+
+permissions:
+  contents: read
+
+jobs:
+  gourmand:
+    name: Code Quality (Gourmand)
+    uses: crunchtools/gatehouse/.github/workflows/gourmand.yml@v0.15.2
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: |
+          uv run --no-sync ruff check src tests
+          uv run --no-sync ruff format --check src tests
+
+      - name: Type check
+        run: uv run --no-sync mypy
+
+      - name: Test
+        run: uv run --no-sync pytest -v
+
+  build-and-push-quay:
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Quay.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.QUAY_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=
+
+      - name: Build image for testing
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Containerfile
+          load: true
+          tags: data-collector:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # No key: Trentina imports, its classifier loads, one sentence is judged
+      # by L1 and L2. Read-only root, as the host runs it.
+      - name: Check the image
+        run: docker run --rm --read-only --tmpfs /tmp data-collector:test check
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Containerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        continue-on-error: true
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.QUAY_IMAGE }}:latest
+          format: "table"
+          exit-code: "0"
+          severity: "CRITICAL,HIGH"
