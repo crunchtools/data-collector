@@ -10,6 +10,8 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]  # Build and test only; the push steps below are gated
+  repository_dispatch:
+    types: [parent-image-updated]  # Trentina's image was rebuilt
   schedule:
     - cron: '0 6 * * 1'  # Weekly Monday rebuild
   workflow_dispatch:
