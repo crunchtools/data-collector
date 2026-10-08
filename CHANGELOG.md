@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The image is rebuilt when Trentina's is, on the fleet's
+  `parent-image-updated` event.
+
 ## [0.2.0] - 2026-10-08
 
 ### Added
