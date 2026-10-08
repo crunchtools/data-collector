@@ -5,7 +5,7 @@
 # runs inside the built image, fails if a new base moves it.
 #
 # Built, tested and pushed by GitHub Actions only.
-FROM quay.io/crunchtools/trentina:1.0.1
+FROM quay.io/crunchtools/trentina:1.1.0
 
 LABEL maintainer="maintainer@crunchtools.com"
 LABEL description="Collects documents from hostile feeds and records Trentina's verdict on each"
