@@ -105,6 +105,14 @@ ORDER BY d.first_seen DESC, d.id
 LIMIT :most
 """
 
+# What one ask of a model has cost, over every pass that was paid for. An
+# average, not the dearest pass: the key's usage figure lags, so a small
+# pass can be charged for its neighbour's asks.
+_ASK_COST = """
+SELECT SUM(cost_usd) / SUM(asks) FROM run_models
+WHERE model = ? AND cost_usd IS NOT NULL AND asks > 0
+"""
+
 _ANSWER_COUNTS = """
 SELECT COUNT(*), COALESCE(SUM(l3_verdict != 'unavailable'), 0)
 FROM verdicts WHERE run_id = ? AND model = ?
@@ -196,6 +204,12 @@ class Store:
         }
         rows = self.db.execute(_PENDING, asked).fetchall()
         return [Pending(row["id"], row["url"], row["text"], row["owed"]) for row in rows]
+
+    def ask_cost(self, model: str) -> float | None:
+        """Dollars one ask of ``model`` has cost on average, or None before
+        its first paid pass."""
+        cost = self.db.execute(_ASK_COST, (model,)).fetchone()[0]
+        return None if cost is None else float(cost)
 
     def add_verdict(
         self, run_id: int, document_id: str, model: str, verdict: dict[str, Any]

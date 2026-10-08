@@ -47,17 +47,32 @@ that model, has a key, and ships a prompt pack for it, and says why if not.
 The collector has its own OpenRouter key with a spending limit, so that it
 can never exhaust a key another service depends on.
 
-Before each model's pass it reads the key's usage from OpenRouter, and it
-does not start the pass when less than `COLLECTOR_BUDGET_FLOOR` dollars are
-left. After the pass it reads the usage again. The difference is that
-model's cost for the run, stored in `run_models.cost_usd`; `runs.cost_usd`
-is the run's total. OpenRouter's usage figure can lag a few seconds, so a
-little of one model's cost may be counted against the next; the run's total
-is the number to trust.
+Before each model's pass it reads the key's usage from OpenRouter, and
+works out how many documents the key can pay for at what that model's asks
+have cost so far, leaving `COLLECTOR_BUDGET_FLOOR` dollars on the key. The
+pass covers that many, newest first, or does not start. An ask the key
+refuses would be wasted, and would count against the document.
+
+After the pass it reads the usage again. The difference is that model's
+cost for the run, stored in `run_models.cost_usd`; `runs.cost_usd` is the
+run's total. OpenRouter's usage figure can lag a few seconds, so a little of
+one model's cost may be counted against the next; the run's total is the
+number to trust.
+
+Documents are collected and stored whatever the budget. What a judge could
+not be asked today it is asked when there is money again.
 
 ## Outcomes
 
-`runs.outcome` is `ok`, `incomplete` (a judge left asks unanswered, or
-none is configured), `out of budget`, or `error: <class>` when the run
-itself failed; what it had collected by then is kept. The process exits 0 only on `ok`, so the systemd unit shows
-the difference.
+`runs.outcome` is the worst of what happened to any judge:
+
+| Outcome | Meaning | Exit |
+|---|---|---|
+| `ok` | Every ask was answered. | 0 |
+| `incomplete` | A judge left some asks unanswered, or no judge is configured. They are owed again on the next run. | 0 |
+| `out of budget` | The key could not pay for every document a judge owed. | 3 |
+| `judge failed` | A judge gave up: the key is refused, the model is gone, or the provider is down. | 3 |
+| `error: <class>` | The run itself failed. What it had collected is kept. | 1 |
+
+A non-zero exit fails the systemd unit, which is what the host's monitoring
+watches.

@@ -26,6 +26,14 @@ if TYPE_CHECKING:
 # is refused, the model is gone, or the provider is down.
 GIVE_UP_AFTER = 12
 IMPORTED = "imported"
+OK = "ok"
+INCOMPLETE = "incomplete"
+OUT_OF_BUDGET = "out of budget"
+JUDGE_FAILED = "judge failed"
+# Worst last. A run's outcome is the worst thing that happened to any judge.
+SEVERITY = (OK, INCOMPLETE, OUT_OF_BUDGET, JUDGE_FAILED)
+# Outcomes that need nobody: what is unanswered is asked again tomorrow.
+SETTLED = (OK, INCOMPLETE)
 EFFORTS = ("minimal", "low", "medium", "high")
 # Passes' worth of documents one model is asked about in one run. A new
 # Trentina version owes the whole corpus again; it is worked off over days,
@@ -73,8 +81,10 @@ async def judge_pass(
     model: str,
     settings: Settings,
     judge: Callable[[str, str], Awaitable[dict[str, Any]]],
+    max_documents: int,
 ) -> bool:
-    """Ask ``judge`` for every answer ``model`` still owes, ``concurrency`` at once.
+    """Ask ``judge`` for the answers ``model`` still owes on its
+    ``max_documents`` newest unanswered documents, ``concurrency`` at once.
 
     Runs in the model's own process. Every ask is stored, answered or not.
     Returns False when it gave up: none of the first ``GIVE_UP_AFTER`` asks
@@ -93,7 +103,7 @@ async def judge_pass(
             answered += verdict["l3_verdict"] != UNAVAILABLE
             store.add_verdict(run_id, document.id, model, verdict)
 
-    owed = store.pending(run_id, model, settings.votes, settings.limit * BACKLOG_FACTOR)
+    owed = store.pending(run_id, model, settings.votes, max_documents)
     await asyncio.gather(*(ask(document) for document in owed for _ in range(document.owed)))
     return bool(answered) or not asked
 
@@ -105,7 +115,7 @@ async def run(
     *,
     versions: tuple[str, str],
     spent: Callable[[], Awaitable[Budget]],
-    pass_for: Callable[[Judge, int], Awaitable[bool]],
+    pass_for: Callable[[Judge, int, int], Awaitable[bool]],
     clock: Callable[[], float],
 ) -> str:
     """One run, start to finish. Returns its outcome, which is also stored.
@@ -116,16 +126,18 @@ async def run(
         settings: Limits, votes and the judge models.
         versions: Trentina's version and its perimeter's.
         spent: Reads the key's budget; called around every model's pass.
-        pass_for: Runs one judge model's pass of this run and says whether it
-            finished (``judge_pass``, in a process of its own on the host).
+        pass_for: Runs one judge model's pass of this run over that many
+            documents and says whether it finished (``judge_pass``, in a
+            process of its own on the host).
         clock: The time, as ``time.time`` gives it.
 
     Returns:
-        ``ok``; ``incomplete`` when a judge left asks unanswered (they are
-        owed again on the next run) or no judge is configured; ``out of
-        budget`` when the key had less than the floor left and the remaining
-        judges were not asked; or ``error: <class>`` when something raised,
-        which is then raised again once the run is closed.
+        ``ok``; ``incomplete`` when a judge left some asks unanswered (they
+        are owed again on the next run) or no judge is configured; ``out of
+        budget`` when the key could not pay for every document a judge owed,
+        so that judge was asked about fewer or none; ``judge failed`` when a
+        judge gave up; or ``error: <class>`` when something raised, which is
+        then raised again once the run is closed. The worst of them wins.
     """
     run_id = store.open_run(feed.name, versions, clock())
     progress = {"collected": 0, "new_documents": 0, "cost_usd": 0.0}
@@ -134,18 +146,32 @@ async def run(
         found = await feed.documents(settings.limit)
         progress["collected"] = len(found)
         progress["new_documents"] = store.add_documents(feed.name, found, clock())
-        outcome = "ok" if settings.judges else "incomplete"
+        outcome = OK if settings.judges else INCOMPLETE
         for judge in settings.judges:
             before = await spent()
+            owed = len(
+                store.pending(run_id, judge.model, settings.votes, settings.limit * BACKLOG_FACTOR)
+            )
+            # A pass is cut to what the key can pay for, at what this judge's
+            # asks have cost so far: an ask the key refuses is an ask wasted.
+            affordable, price = owed, store.ask_cost(judge.model)
             if not before.covers(settings.floor):
-                outcome = "out of budget"
-                break
-            finished = await pass_for(judge, run_id)
-            cost = (await spent()).used - before.used
-            progress["cost_usd"] += cost
-            asks, answered = store.close_model(run_id, judge.model, cost)
-            if not finished or answered < asks:
-                outcome = "incomplete"
+                affordable = 0
+            elif before.left is not None and price:
+                affordable = min(
+                    owed, int((before.left - settings.floor) / (price * settings.votes))
+                )
+            result = OK if affordable == owed else OUT_OF_BUDGET
+            if affordable:
+                finished = await pass_for(judge, run_id, affordable)
+                cost = (await spent()).used - before.used
+                progress["cost_usd"] += cost
+                asks, answered = store.close_model(run_id, judge.model, cost)
+                if not finished:
+                    result = JUDGE_FAILED
+                elif answered < asks:
+                    result = max(result, INCOMPLETE, key=SEVERITY.index)
+            outcome = max(outcome, result, key=SEVERITY.index)
     except Exception as exc:
         outcome = f"error: {type(exc).__name__}"
         raise

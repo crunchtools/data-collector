@@ -1,6 +1,6 @@
 [project]
 name = "data-collector"
-version = "0.1.0"
+version = "0.2.0"
 description = "Collects documents from hostile feeds and records what Trentina's defense pipeline makes of each"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
