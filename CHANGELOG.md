@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.2.0] - 2026-10-08
 
+### Added
+- The image is also pushed to `ghcr.io/crunchtools/data-collector`.
+
 ### Changed
 - A judge's pass is cut to the documents the key can pay for, at what that
   judge's asks have cost so far. A judge that cannot be afforded is skipped
