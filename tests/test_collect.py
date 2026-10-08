@@ -7,12 +7,15 @@ decisions the two-week study leans on, so each is held here.
 from __future__ import annotations
 
 import json
+import sys
+import types
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
 
+from data_collector import __main__ as cli
 from data_collector.__main__ import judge_environment
 from data_collector.budget import KEY_URL, Budget, budget
 from data_collector.collect import GIVE_UP_AFTER, Judge, Settings, import_run, judge_pass, run
@@ -55,7 +58,7 @@ class Rig:
         self.now += 1
         return self.now
 
-    async def pass_for(self, judge: Judge, run_id: int, most: int) -> bool:
+    async def pass_for(self, judge: Judge, run_id: int, max_documents: int) -> bool:
         async def answer(text: str, _url: str) -> dict[str, Any]:
             self.asks.append((judge.model, text))
             self.used += 0.01
@@ -70,7 +73,7 @@ class Rig:
                 "l1_risk": "low",
             }
 
-        return await judge_pass(self.store, run_id, judge.model, SETTINGS, answer, most)
+        return await judge_pass(self.store, run_id, judge.model, SETTINGS, answer, max_documents)
 
     def rows(self, query: str) -> list[tuple[Any, ...]]:
         return [tuple(row) for row in self.store.db.execute(query)]
@@ -169,6 +172,113 @@ async def test_a_pass_is_cut_to_what_the_key_can_pay_for(rig: Rig) -> None:
     paid = len(rig.asks)
     assert await rig.run() == "ok"
     assert len(rig.asks) - paid == 2 * 7 * 3  # the seven it could not afford
+
+
+@pytest.mark.parametrize(
+    ("left", "documents"),
+    [
+        (None, 10),  # a key with no limit pays for everything
+        (SETTINGS.floor + 0.065, 2),  # two documents and a bit: two
+        (SETTINGS.floor + 0.02, 0),  # less than one document: none
+        (SETTINGS.floor, 0),  # exactly the floor is not more than the floor
+    ],
+)
+async def test_how_many_documents_a_balance_pays_for(
+    rig: Rig, left: float | None, documents: int
+) -> None:
+    await rig.run()  # an ask has cost a cent, a document three
+    before = len(rig.asks)
+    rig.found = [
+        Document("post", f"https://feed.example/{n}", f"Post number {n}, long enough.")
+        for n in range(10)
+    ]
+
+    async def spent() -> Budget:
+        return Budget(rig.used, left)
+
+    outcome = await run(
+        rig.store,
+        rig,
+        SETTINGS,
+        versions=("1.0.1", "11"),
+        spent=spent,
+        pass_for=rig.pass_for,
+        clock=rig.clock,
+    )
+    assert len(rig.asks) - before == 2 * documents * 3
+    assert outcome == ("ok" if documents == 10 else "out of budget")
+
+
+async def test_a_run_reports_the_worst_thing_that_happened_to_any_judge(rig: Rig) -> None:
+    await rig.run()  # so that an ask has a price
+    lefts: list[float] = []
+
+    async def spent() -> Budget:
+        return Budget(rig.used, lefts.pop(0) if lefts else 10.0)
+
+    async def run_on(*texts: str) -> str:
+        rig.found = [Document("post", "https://feed.example/9", text) for text in texts]
+        lefts[:] = [SETTINGS.floor]  # the first judge, v/a, cannot be paid for
+        return await run(
+            rig.store,
+            rig,
+            SETTINGS,
+            versions=("1.0.1", "11"),
+            spent=spent,
+            pass_for=rig.pass_for,
+            clock=rig.clock,
+        )
+
+    # One judge unpaid outranks a few asks the other left unanswered.
+    rig.unanswerable = {"A new post, long enough."}
+    assert await run_on("A new post, long enough.", "A second, long enough.") == "out of budget"
+    assert rig.rows("SELECT model, asks, answered FROM run_models WHERE run_id = 2") == [
+        ("v/b", 6, 3)
+    ]
+    # And a judge that gave up outranks a judge unpaid.
+    rig.down = {"v/b"}
+    assert await run_on("Another post, long enough.") == "judge failed"
+    assert rig.rows("SELECT outcome FROM runs ORDER BY id DESC LIMIT 1") == [("judge failed",)]
+
+
+JUDGE_COMMAND = ("judge", "--run", "4", "--max-documents", "7")
+
+
+async def test_the_run_tells_a_judges_process_how_many_documents(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started: list[tuple[str, ...]] = []
+
+    async def one_pass(*_given: Any, **wired: Any) -> str:
+        await wired["pass_for"](Judge("v/a"), 4, 7)
+        return "ok"
+
+    async def process(_judge: Judge, *command: str) -> bool:
+        started.append(command)
+        return True
+
+    trentina = types.SimpleNamespace(fetch=None, versions=lambda: ("1.0.1", "11"))
+    monkeypatch.setitem(sys.modules, "data_collector.pipeline", trentina)
+    monkeypatch.setattr(cli, "run", one_pass)
+    monkeypatch.setattr(cli, "_model_process", process)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    assert await cli._run(rig.store) == 0
+    assert started == [JUDGE_COMMAND]
+
+
+def test_a_judges_process_reads_how_many_documents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[tuple[int, int]] = []
+
+    async def judge(_store: Store, run_id: int, max_documents: int) -> int:
+        asked.append((run_id, max_documents))
+        return 0
+
+    monkeypatch.setattr(cli, "_judge", judge)
+    monkeypatch.setenv("COLLECTOR_DB", str(tmp_path / "collector.db"))
+    assert cli.main(list(JUDGE_COMMAND)) == 0
+    assert asked == [(4, 7)]
 
 
 async def test_with_too_little_left_on_the_key_no_judge_is_asked(rig: Rig) -> None:

@@ -78,8 +78,8 @@ async def _run(store: Store) -> int:
         _settings(),
         versions=pipeline.versions(),
         spent=lambda: budget(key),
-        pass_for=lambda judge, run_id, most: _model_process(
-            judge, "judge", "--run", str(run_id), "--most", str(most)
+        pass_for=lambda judge, run_id, max_documents: _model_process(
+            judge, "judge", "--run", str(run_id), "--max-documents", str(max_documents)
         ),
         clock=time.time,
     )
@@ -87,7 +87,7 @@ async def _run(store: Store) -> int:
     return 0 if outcome in SETTLED else EXIT_UNFINISHED
 
 
-async def _judge(store: Store, run_id: int, most: int) -> int:
+async def _judge(store: Store, run_id: int, max_documents: int) -> int:
     from . import pipeline
 
     model = os.environ[pipeline.JUDGE_ENVIRONMENT["model"]]
@@ -95,7 +95,7 @@ async def _judge(store: Store, run_id: int, most: int) -> int:
     if problem is not None:
         print(f"not judging: {problem}", file=sys.stderr)
         return EXIT_UNFINISHED
-    finished = await judge_pass(store, run_id, model, _settings(), pipeline.judge, most)
+    finished = await judge_pass(store, run_id, model, _settings(), pipeline.judge, max_documents)
     return 0 if finished else EXIT_UNFINISHED
 
 
@@ -128,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("run", help="collect the feed and judge what is new")
     judge = commands.add_parser("judge", help="one judge model's pass of a run (internal)")
     judge.add_argument("--run", type=int, required=True)
-    judge.add_argument("--most", type=int, required=True, help="documents at most")
+    judge.add_argument("--max-documents", type=int, required=True)
     imported = commands.add_parser("import", help="load a collect-wild run's artifacts")
     imported.add_argument("artifacts", type=Path, help="the directory gh run download wrote")
     commands.add_parser("check", help="verify the image without a real key")
@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run":
         return asyncio.run(_run(store))
     if args.command == "judge":
-        return asyncio.run(_judge(store, args.run, args.most))
+        return asyncio.run(_judge(store, args.run, args.max_documents))
     print(f"imported as run {import_run(store, args.artifacts, time.time())}")
     return 0
 

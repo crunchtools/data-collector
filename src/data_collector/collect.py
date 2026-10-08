@@ -81,10 +81,10 @@ async def judge_pass(
     model: str,
     settings: Settings,
     judge: Callable[[str, str], Awaitable[dict[str, Any]]],
-    most: int,
+    max_documents: int,
 ) -> bool:
-    """Ask ``judge`` for the answers ``model`` still owes on its ``most``
-    newest unanswered documents, ``concurrency`` at once.
+    """Ask ``judge`` for the answers ``model`` still owes on its
+    ``max_documents`` newest unanswered documents, ``concurrency`` at once.
 
     Runs in the model's own process. Every ask is stored, answered or not.
     Returns False when it gave up: none of the first ``GIVE_UP_AFTER`` asks
@@ -103,7 +103,7 @@ async def judge_pass(
             answered += verdict["l3_verdict"] != UNAVAILABLE
             store.add_verdict(run_id, document.id, model, verdict)
 
-    owed = store.pending(run_id, model, settings.votes, most)
+    owed = store.pending(run_id, model, settings.votes, max_documents)
     await asyncio.gather(*(ask(document) for document in owed for _ in range(document.owed)))
     return bool(answered) or not asked
 
@@ -154,14 +154,16 @@ async def run(
             )
             # A pass is cut to what the key can pay for, at what this judge's
             # asks have cost so far: an ask the key refuses is an ask wasted.
-            most, price = owed, store.ask_cost(judge.model)
+            affordable, price = owed, store.ask_cost(judge.model)
             if not before.covers(settings.floor):
-                most = 0
+                affordable = 0
             elif before.left is not None and price:
-                most = min(owed, int((before.left - settings.floor) / (price * settings.votes)))
-            result = OK if most == owed else OUT_OF_BUDGET
-            if most:
-                finished = await pass_for(judge, run_id, most)
+                affordable = min(
+                    owed, int((before.left - settings.floor) / (price * settings.votes))
+                )
+            result = OK if affordable == owed else OUT_OF_BUDGET
+            if affordable:
+                finished = await pass_for(judge, run_id, affordable)
                 cost = (await spent()).used - before.used
                 progress["cost_usd"] += cost
                 asks, answered = store.close_model(run_id, judge.model, cost)
