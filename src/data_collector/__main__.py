@@ -9,8 +9,8 @@ Settings come from the environment, as the container is given them
 * ``COLLECTOR_LIMIT``: documents to collect at most. Default 300.
 * ``COLLECTOR_VOTES``: asks per document and model. Default 3.
 * ``COLLECTOR_CONCURRENCY``: asks in flight at once. Default 6.
-* ``COLLECTOR_BUDGET_FLOOR``: dollars that must be left on the key for a
-  model's pass to start. Default 0.50.
+* ``COLLECTOR_BUDGET_FLOOR``: dollars a model's pass must leave on the key.
+  Default 0.50.
 * ``OPENROUTER_API_KEY``: the collector's own key.
 """
 
@@ -24,11 +24,11 @@ import time
 from pathlib import Path
 
 from .budget import budget
-from .collect import Judge, Settings, import_run, judge_pass, run
+from .collect import SETTLED, Judge, Settings, import_run, judge_pass, run
 from .feed import Moltbook
 from .store import Store
 
-EXIT_INCOMPLETE = 3
+EXIT_UNFINISHED = 3
 # Seconds a judge call may wait out a rate limit. This is a batch job: it is
 # better to wait than to record an ask as unanswered.
 PATIENCE_SECONDS = 600
@@ -78,23 +78,25 @@ async def _run(store: Store) -> int:
         _settings(),
         versions=pipeline.versions(),
         spent=lambda: budget(key),
-        pass_for=lambda judge, run_id: _model_process(judge, "judge", "--run", str(run_id)),
+        pass_for=lambda judge, run_id, most: _model_process(
+            judge, "judge", "--run", str(run_id), "--most", str(most)
+        ),
         clock=time.time,
     )
     print(f"run finished: {outcome}")
-    return 0 if outcome == "ok" else EXIT_INCOMPLETE
+    return 0 if outcome in SETTLED else EXIT_UNFINISHED
 
 
-async def _judge(store: Store, run_id: int) -> int:
+async def _judge(store: Store, run_id: int, most: int) -> int:
     from . import pipeline
 
     model = os.environ[pipeline.JUDGE_ENVIRONMENT["model"]]
     problem = pipeline.judge_problem(model)
     if problem is not None:
         print(f"not judging: {problem}", file=sys.stderr)
-        return EXIT_INCOMPLETE
-    finished = await judge_pass(store, run_id, model, _settings(), pipeline.judge)
-    return 0 if finished else EXIT_INCOMPLETE
+        return EXIT_UNFINISHED
+    finished = await judge_pass(store, run_id, model, _settings(), pipeline.judge, most)
+    return 0 if finished else EXIT_UNFINISHED
 
 
 def _check_judge() -> int:
@@ -126,6 +128,7 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("run", help="collect the feed and judge what is new")
     judge = commands.add_parser("judge", help="one judge model's pass of a run (internal)")
     judge.add_argument("--run", type=int, required=True)
+    judge.add_argument("--most", type=int, required=True, help="documents at most")
     imported = commands.add_parser("import", help="load a collect-wild run's artifacts")
     imported.add_argument("artifacts", type=Path, help="the directory gh run download wrote")
     commands.add_parser("check", help="verify the image without a real key")
@@ -139,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run":
         return asyncio.run(_run(store))
     if args.command == "judge":
-        return asyncio.run(_judge(store, args.run))
+        return asyncio.run(_judge(store, args.run, args.most))
     print(f"imported as run {import_run(store, args.artifacts, time.time())}")
     return 0
 

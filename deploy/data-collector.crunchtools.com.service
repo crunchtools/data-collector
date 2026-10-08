@@ -5,8 +5,9 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-# A run is 3,600 model calls at six at a time; an hour is generous.
-TimeoutStartSec=5400
+# A day's 3,600 model calls took 36 minutes at six at a time, and a run that
+# is also working off a backlog makes twice as many.
+TimeoutStartSec=10800
 ExecStartPre=-/usr/bin/podman rm -f data-collector.crunchtools.com
 ExecStartPre=/usr/bin/podman pull -q quay.io/crunchtools/data-collector:latest
 ExecStart=/usr/bin/podman run \

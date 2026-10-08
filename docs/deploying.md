@@ -21,7 +21,8 @@ systemctl start data-collector.crunchtools.com.service   # a first run, by hand
 ```
 
 The service logs to the journal. It exits non-zero when a run is
-`incomplete` or `out of budget`, so `systemctl status` shows it.
+`out of budget`, a judge failed or the run itself did, so the unit fails
+and `systemctl status` shows it ([outcomes](judging.md#outcomes)).
 
 ## Loading earlier results
 

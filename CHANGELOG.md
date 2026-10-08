@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-08
+
+### Changed
+- A judge's pass is cut to the documents the key can pay for, at what that
+  judge's asks have cost so far. A judge that cannot be afforded is skipped
+  and the next, cheaper one is still asked.
+- A run with a few unanswered asks (`incomplete`) exits 0. Only `out of
+  budget`, the new `judge failed` and an error fail the unit.
+- The unit may run for three hours: a run working off a backlog makes twice
+  a day's calls.
+
 ## [0.1.0] - 2026-10-08
 
 ### Added

@@ -42,6 +42,7 @@ class Rig:
     left: float = 10.0
     asks: list[tuple[str, str]] = field(default_factory=list)
     down: set[str] = field(default_factory=set)
+    unanswerable: set[str] = field(default_factory=set)
     now: float = 1000.0
 
     async def documents(self, _limit: int) -> list[Document]:
@@ -54,11 +55,11 @@ class Rig:
         self.now += 1
         return self.now
 
-    async def pass_for(self, judge: Judge, run_id: int) -> bool:
+    async def pass_for(self, judge: Judge, run_id: int, most: int) -> bool:
         async def answer(text: str, _url: str) -> dict[str, Any]:
             self.asks.append((judge.model, text))
             self.used += 0.01
-            if judge.model in self.down:
+            if judge.model in self.down or text in self.unanswerable:
                 return {"l3_verdict": UNAVAILABLE, "l3_detail": "judge down"}
             flagged = "system prompt" in text
             return {
@@ -69,7 +70,7 @@ class Rig:
                 "l1_risk": "low",
             }
 
-        return await judge_pass(self.store, run_id, judge.model, SETTINGS, answer)
+        return await judge_pass(self.store, run_id, judge.model, SETTINGS, answer, most)
 
     def rows(self, query: str) -> list[tuple[Any, ...]]:
         return [tuple(row) for row in self.store.db.execute(query)]
@@ -127,7 +128,7 @@ async def test_a_run_records_what_each_judge_cost(rig: Rig) -> None:
 
 async def test_a_judge_that_did_not_answer_is_owed_again_on_the_next_run(rig: Rig) -> None:
     rig.down = {"v/b"}
-    assert await rig.run() == "incomplete"
+    assert await rig.run() == "judge failed"
     assert rig.rows("SELECT asks, answered FROM run_models WHERE model = 'v/b'") == [(6, 0)]
     rig.down = set()
     before = len(rig.asks)
@@ -142,8 +143,32 @@ async def test_a_judge_that_answers_nothing_is_not_asked_everything(rig: Rig) ->
         for n in range(20)
     ]
     rig.down = {"v/a", "v/b"}
-    assert await rig.run() == "incomplete"
+    assert await rig.run() == "judge failed"
     assert len(rig.asks) < 2 * (GIVE_UP_AFTER + SETTINGS.concurrency)
+
+
+async def test_a_few_unanswered_asks_are_not_a_failed_judge(rig: Rig) -> None:
+    rig.unanswerable = {BENIGN.text}
+    assert await rig.run() == "incomplete"
+    assert rig.rows("SELECT asks, answered FROM run_models WHERE model = 'v/a'") == [(6, 3)]
+
+
+async def test_a_pass_is_cut_to_what_the_key_can_pay_for(rig: Rig) -> None:
+    """An ask the key refuses is wasted, and counts against the document."""
+    await rig.run()  # two documents: an ask has cost a cent, a document three
+    before = len(rig.asks)
+    rig.found = [
+        Document("post", f"https://feed.example/{n}", f"Post number {n}, long enough.")
+        for n in range(10)
+    ]
+    rig.left = SETTINGS.floor + 0.10
+    assert await rig.run() == "out of budget"
+    assert len(rig.asks) - before == 2 * 3 * 3  # three documents, three votes, two judges
+    assert rig.rows("SELECT COUNT(*) FROM verdicts WHERE l3_verdict = 'unavailable'") == [(0,)]
+    rig.left = 10.0
+    paid = len(rig.asks)
+    assert await rig.run() == "ok"
+    assert len(rig.asks) - paid == 2 * 7 * 3  # the seven it could not afford
 
 
 async def test_with_too_little_left_on_the_key_no_judge_is_asked(rig: Rig) -> None:
@@ -220,7 +245,7 @@ async def test_a_document_no_judge_can_answer_is_left_alone_after_three_runs(rig
     rig.found = [ATTACK]
     rig.down = {"v/a", "v/b"}
     for _ in range(MAX_UNANSWERED):
-        assert await rig.run() == "incomplete"
+        assert await rig.run() == "judge failed"
     assert rig.rows("SELECT COUNT(*), MIN(l3_detail) FROM verdicts WHERE model = 'v/a'") == [
         (3 * MAX_UNANSWERED, "judge down")
     ]
