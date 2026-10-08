@@ -159,7 +159,7 @@ def import_run(store: Store, documents: Path, judged: list[Path], now: float) ->
     """
     found = json.loads(documents.read_text())
     run_id = store.open_run(found.get("source", "moltbook"), ("benchmark", "benchmark"), now)
-    collected = [Document(d["id"], d["kind"], d["url"], d["text"]) for d in found["documents"]]
+    collected = [Document(d["kind"], d["url"], d["text"]) for d in found["documents"]]
     new = store.add_documents(found.get("source", "moltbook"), collected, now)
     for path in judged:
         result = json.loads(path.read_text())

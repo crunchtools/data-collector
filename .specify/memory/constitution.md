@@ -46,7 +46,7 @@ a key another service depends on. It reads the key's usage around every
 judge model's pass, records the cost, and does not start a pass with less
 than the configured floor left.
 
-## Testing
+## What CI Proves
 
 Unit tests replace the network and Trentina, and run with no key. CI also
 runs `check` inside the built image, which imports Trentina, loads its

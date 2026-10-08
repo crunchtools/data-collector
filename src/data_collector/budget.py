@@ -34,6 +34,6 @@ async def budget(key: str, transport: httpx.AsyncBaseTransport | None = None) ->
     async with httpx.AsyncClient(transport=transport, timeout=30.0) as client:
         reply = await client.get(KEY_URL, headers={"Authorization": f"Bearer {key}"})
         reply.raise_for_status()
-    data = reply.json()["data"]
-    left = data.get("limit_remaining")
-    return Budget(float(data["usage"]), None if left is None else float(left))
+    key_state = reply.json()["data"]
+    left = key_state.get("limit_remaining")
+    return Budget(float(key_state["usage"]), None if left is None else float(left))

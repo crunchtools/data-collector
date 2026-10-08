@@ -36,14 +36,15 @@ ID_LENGTH = 16
 class Document:
     """One collected text and where it was read."""
 
-    id: str
     kind: str
     url: str
     text: str
 
-    @classmethod
-    def of(cls, kind: str, url: str, text: str) -> Document:
-        return cls(hashlib.sha256(text.encode()).hexdigest()[:ID_LENGTH], kind, url, text)
+    @property
+    def id(self) -> str:
+        """The start of the text's SHA-256: the same text is the same document
+        wherever and however often it is collected."""
+        return hashlib.sha256(self.text.encode()).hexdigest()[:ID_LENGTH]
 
 
 @dataclass
@@ -73,7 +74,7 @@ class Moltbook:
             unread = list((await self.get(path))["comments"])
             while unread:
                 comment = unread.pop(0)
-                yield Document.of(
+                yield Document(
                     "comment", f"{MOLTBOOK_API}/{path}", str(comment.get("content") or "")
                 )
                 unread[:0] = comment.get("replies") or []
@@ -89,7 +90,7 @@ class Moltbook:
                 path = f"posts/{listed['id']}"
                 post = (await self.get(path))["post"]
                 text = f"{post.get('title') or ''}\n\n{post.get('content') or ''}"
-                yield Document.of("post", f"{MOLTBOOK_API}/{path}", text)
+                yield Document("post", f"{MOLTBOOK_API}/{path}", text)
             cursor = str(page.get("next_cursor") or "")
             if not (page.get("has_more") and cursor):
                 return

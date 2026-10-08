@@ -67,5 +67,5 @@ async def test_collection_stops_at_the_limit_with_comments_at_most_half() -> Non
 
 
 def test_a_documents_id_is_its_text() -> None:
-    assert Document.of("post", "u1", LONG).id == Document.of("comment", "u2", LONG).id
-    assert Document.of("post", "u1", LONG).id != Document.of("post", "u1", REPLY).id
+    assert Document("post", "u1", LONG).id == Document("comment", "u2", LONG).id
+    assert Document("post", "u1", LONG).id != Document("post", "u1", REPLY).id
