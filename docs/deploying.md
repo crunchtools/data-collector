@@ -11,10 +11,16 @@ server: it runs, writes to the database, and exits.
 ```
 
 Copy `deploy/collector.env.example` to `collector.env` and fill in the key.
-Install `deploy/data-collector.crunchtools.com.service` and `.timer` as
-regular files in `/etc/systemd/system/`, then:
+Copy `deploy/data-collector.crunchtools.com.service` and `.timer` into
+`/srv/data-collector.crunchtools.com/config/` and commit them in `/srv`
+first: that copy is the one Nagios compares the running unit against, and
+a unit installed without it reads as drift. Then install both from there
+as regular files in `/etc/systemd/system/`. The same order applies every
+time a unit changes:
 
 ```bash
+cd /srv/data-collector.crunchtools.com/config
+cp data-collector.crunchtools.com.service data-collector.crunchtools.com.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now data-collector.crunchtools.com.timer
 systemctl start data-collector.crunchtools.com.service   # a first run, by hand
