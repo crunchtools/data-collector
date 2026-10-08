@@ -3,7 +3,7 @@
 > **Version:** 1.0.0
 > **Ratified:** 2026-10-08
 > **Status:** Active
-> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.20.0
+> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.21.0
 > **Profile:** Container Image
 
 This file holds what is specific to data-collector. The fleet rules and the
