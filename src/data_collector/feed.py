@@ -32,6 +32,17 @@ SHORTEST = 40
 ID_LENGTH = 16
 
 
+class FeedError(Exception):
+    """One request to a feed failed: refused, timed out, or answered with
+    something other than a 200. ``fetch`` raises it; the reader skips the item."""
+
+
+def _text(value: object) -> str:
+    """A field as text that can be stored and hashed. JSON may carry a lone
+    surrogate, which is not encodable; one hostile comment must not stop a run."""
+    return str(value or "").encode("utf-8", "replace").decode("utf-8")
+
+
 @dataclass(frozen=True)
 class Document:
     """One collected text and where it was read."""
@@ -51,7 +62,7 @@ class Document:
 class Moltbook:
     """The read API, one paced request at a time.
 
-    ``fetch`` returns the body at a URL and raises on anything but a 200.
+    ``fetch`` returns the body at a URL and raises ``FeedError`` otherwise.
     ``pause`` is awaited with ``PAUSE`` before every request after the first.
     """
 
@@ -59,24 +70,33 @@ class Moltbook:
     pause: Callable[[float], Awaitable[None]] = asyncio.sleep
     name: str = "moltbook"
     asked: int = 0
+    failed: int = 0
 
     async def get(self, path: str) -> dict[str, Any]:
+        """One API answer, or an empty one when the request failed.
+
+        A run makes well over a hundred requests against a feed that deletes
+        posts between listing and reading them. One that fails is counted in
+        ``failed`` and skipped: it must not cost the run everything else.
+        """
         if self.asked:
             await self.pause(PAUSE)
         self.asked += 1
-        return dict(json.loads(await self.fetch(f"{MOLTBOOK_API}/{path}")))
+        try:
+            return dict(json.loads(await self.fetch(f"{MOLTBOOK_API}/{path}")))
+        except (FeedError, ValueError):  # ValueError: a 200 whose body is not JSON
+            self.failed += 1
+            return {}
 
     async def comments(self) -> AsyncIterator[Document]:
         """The newest comments under the hottest posts, replies included, in
         reading order: where text addressed to whoever reads a thread collects."""
-        for post in (await self.get(f"posts?sort=hot&limit={HOT_POSTS}"))["posts"]:
+        for post in (await self.get(f"posts?sort=hot&limit={HOT_POSTS}")).get("posts", []):
             path = f"posts/{post['id']}/comments?sort=new&limit={COMMENTS_PER_POST}"
-            unread = list((await self.get(path))["comments"])
+            unread = list((await self.get(path)).get("comments", []))
             while unread:
                 comment = unread.pop(0)
-                yield Document(
-                    "comment", f"{MOLTBOOK_API}/{path}", str(comment.get("content") or "")
-                )
+                yield Document("comment", f"{MOLTBOOK_API}/{path}", _text(comment.get("content")))
                 unread[:0] = comment.get("replies") or []
 
     async def posts(self) -> AsyncIterator[Document]:
@@ -86,10 +106,10 @@ class Moltbook:
         while True:
             more = f"&cursor={cursor}" if cursor else ""
             page = await self.get(f"posts?sort=new&limit={PAGE}{more}")
-            for listed in page["posts"]:
+            for listed in page.get("posts", []):
                 path = f"posts/{listed['id']}"
-                post = (await self.get(path))["post"]
-                text = f"{post.get('title') or ''}\n\n{post.get('content') or ''}"
+                post = (await self.get(path)).get("post") or {}
+                text = f"{_text(post.get('title'))}\n\n{_text(post.get('content'))}"
                 yield Document("post", f"{MOLTBOOK_API}/{path}", text)
             cursor = str(page.get("next_cursor") or "")
             if not (page.get("has_more") and cursor):
@@ -101,6 +121,6 @@ class Moltbook:
         seen: dict[str, Document] = {}
         for found, room in ((self.comments(), limit // 2), (self.posts(), limit)):
             while len(seen) < room and (document := await anext(found, None)) is not None:
-                if len(document.text) >= SHORTEST:
+                if len(document.text.strip()) >= SHORTEST:
                     seen.setdefault(document.id, document)
         return list(seen.values())

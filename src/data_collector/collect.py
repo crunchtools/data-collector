@@ -26,6 +26,11 @@ if TYPE_CHECKING:
 # is refused, the model is gone, or the provider is down.
 GIVE_UP_AFTER = 12
 IMPORTED = "imported"
+EFFORTS = ("minimal", "low", "medium", "high")
+# Passes' worth of documents one model is asked about in one run. A new
+# Trentina version owes the whole corpus again; it is worked off over days,
+# inside the budget and the unit's timeout, not in one run.
+BACKLOG_FACTOR = 2
 
 
 @dataclass(frozen=True)
@@ -37,9 +42,10 @@ class Judge:
 
     @classmethod
     def parse(cls, spec: str) -> Judge:
-        """``vendor/model`` or ``vendor/model:effort``."""
-        model, _, effort = spec.strip().partition(":")
-        return cls(model, effort or None)
+        """``vendor/model`` or ``vendor/model:effort``. A colon that is part
+        of the model's own name (``vendor/model:free``) stays part of it."""
+        model, _, effort = spec.strip().rpartition(":")
+        return cls(model, effort) if model and effort in EFFORTS else cls(spec.strip())
 
 
 @dataclass(frozen=True)
@@ -87,7 +93,7 @@ async def judge_pass(
             answered += verdict["l3_verdict"] != UNAVAILABLE
             store.add_verdict(run_id, document.id, model, verdict)
 
-    owed = store.pending(run_id, model, settings.votes)
+    owed = store.pending(run_id, model, settings.votes, settings.limit * BACKLOG_FACTOR)
     await asyncio.gather(*(ask(document) for document in owed for _ in range(document.owed)))
     return bool(answered) or not asked
 
@@ -116,33 +122,51 @@ async def run(
 
     Returns:
         ``ok``; ``incomplete`` when a judge left asks unanswered (they are
-        owed again on the next run); or ``out of budget`` when the key had
-        less than the floor left and the remaining judges were not asked.
+        owed again on the next run) or no judge is configured; ``out of
+        budget`` when the key had less than the floor left and the remaining
+        judges were not asked; or ``error: <class>`` when something raised,
+        which is then raised again once the run is closed.
     """
     run_id = store.open_run(feed.name, versions, clock())
-    found = await feed.documents(settings.limit)
-    new = store.add_documents(feed.name, found, clock())
-    outcome = "ok"
-    total = 0.0
-    for judge in settings.judges:
-        before = await spent()
-        if not before.covers(settings.floor):
-            outcome = "out of budget"
-            break
-        finished = await pass_for(judge, run_id)
-        cost = (await spent()).used - before.used
-        total += cost
-        asks, answered = store.close_model(run_id, judge.model, cost)
-        if not finished or answered < asks:
-            outcome = "incomplete"
-    store.close_run(
-        run_id, clock(), collected=len(found), new_documents=new, cost_usd=total, outcome=outcome
-    )
+    progress = {"collected": 0, "new_documents": 0, "cost_usd": 0.0}
+    outcome = "error: interrupted"
+    try:
+        found = await feed.documents(settings.limit)
+        progress["collected"] = len(found)
+        progress["new_documents"] = store.add_documents(feed.name, found, clock())
+        outcome = "ok" if settings.judges else "incomplete"
+        for judge in settings.judges:
+            before = await spent()
+            if not before.covers(settings.floor):
+                outcome = "out of budget"
+                break
+            finished = await pass_for(judge, run_id)
+            cost = (await spent()).used - before.used
+            progress["cost_usd"] += cost
+            asks, answered = store.close_model(run_id, judge.model, cost)
+            if not finished or answered < asks:
+                outcome = "incomplete"
+    except Exception as exc:
+        outcome = f"error: {type(exc).__name__}"
+        raise
+    finally:
+        # Whatever happened, the run row says so and keeps what was collected.
+        store.close_run(
+            run_id,
+            clock(),
+            collected=int(progress["collected"]),
+            new_documents=int(progress["new_documents"]),
+            cost_usd=progress["cost_usd"],
+            outcome=outcome,
+        )
     return outcome
 
 
-def import_run(store: Store, documents: Path, judged: list[Path], now: float) -> int:
-    """Load one run of Trentina's ``collect-wild`` workflow from its artifacts.
+def import_run(store: Store, artifacts: Path, now: float) -> int:
+    """Load one run of Trentina's ``collect-wild`` workflow from its
+    downloaded artifacts: ``wild-documents/wild.json`` and each judge's
+    ``wild-judge-*/detonation.json`` under ``artifacts``. Import a run once:
+    a second import records its verdicts a second time.
 
     Those verdicts came from the benchmark harness, which asks the judge
     alone: there is no L1 or L2 column to fill, and the run is recorded under
@@ -150,20 +174,20 @@ def import_run(store: Store, documents: Path, judged: list[Path], now: float) ->
 
     Args:
         store: The database.
-        documents: The run's ``wild.json``.
-        judged: Each judge model's ``detonation.json`` from the same run.
+        artifacts: The directory ``gh run download`` wrote.
         now: When the import is made; the documents' first-seen time.
 
     Returns:
         The run's id.
     """
-    found = json.loads(documents.read_text())
+    found = json.loads((artifacts / "wild-documents" / "wild.json").read_text())
     run_id = store.open_run(found.get("source", "moltbook"), ("benchmark", "benchmark"), now)
     collected = [Document(d["kind"], d["url"], d["text"]) for d in found["documents"]]
     new = store.add_documents(found.get("source", "moltbook"), collected, now)
-    for path in judged:
+    known = {document.id for document in collected}
+    for path in sorted(artifacts.glob("wild-judge-*/detonation.json")):
         result = json.loads(path.read_text())
-        for record in result["verdicts"]:
+        for record in (r for r in result["verdicts"] if r["document"] in known):
             for vote in record["votes"]:
                 answer = UNAVAILABLE if vote is None else ("flagged" if vote else "clean")
                 flagged_by = "L3" if vote else None

@@ -29,6 +29,9 @@ from .feed import Moltbook
 from .store import Store
 
 EXIT_INCOMPLETE = 3
+# Seconds a judge call may wait out a rate limit. This is a batch job: it is
+# better to wait than to record an ask as unanswered.
+PATIENCE_SECONDS = 600
 
 
 def _settings() -> Settings:
@@ -42,14 +45,25 @@ def _settings() -> Settings:
     )
 
 
-async def _model_process(judge: Judge, run_id: int) -> bool:
-    """One judge model's pass, in a process whose Trentina configuration
-    names that model."""
-    env = {**os.environ, "QUARANTINE_PROVIDER": "openrouter", "QUARANTINE_MODEL": judge.model}
+def judge_environment(judge: Judge, names: dict[str, str], base: dict[str, str]) -> dict[str, str]:
+    """The environment of the process that judges with ``judge``: ``base``
+    with Trentina's judge settings (``pipeline.JUDGE_ENVIRONMENT``) set."""
+    env = {**base, names["provider"]: "openrouter", names["model"]: judge.model}
+    env[names["patience"]] = str(PATIENCE_SECONDS)
+    env.pop(names["effort"], None)
     if judge.effort:
-        env["QUARANTINE_REASONING_EFFORT"] = judge.effort
+        env[names["effort"]] = judge.effort
+    return env
+
+
+async def _model_process(judge: Judge, *command: str) -> bool:
+    """Run ``command`` of this program in a process whose Trentina
+    configuration names ``judge``'s model. True when it exits 0."""
+    from . import pipeline
+
+    env = judge_environment(judge, pipeline.JUDGE_ENVIRONMENT, dict(os.environ))
     process = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "data_collector", "judge", "--run", str(run_id), env=env
+        sys.executable, "-m", "data_collector", *command, env=env
     )
     return await process.wait() == 0
 
@@ -64,7 +78,7 @@ async def _run(store: Store) -> int:
         _settings(),
         versions=pipeline.versions(),
         spent=lambda: budget(key),
-        pass_for=_model_process,
+        pass_for=lambda judge, run_id: _model_process(judge, "judge", "--run", str(run_id)),
         clock=time.time,
     )
     print(f"run finished: {outcome}")
@@ -74,19 +88,36 @@ async def _run(store: Store) -> int:
 async def _judge(store: Store, run_id: int) -> int:
     from . import pipeline
 
-    model = os.environ["QUARANTINE_MODEL"]
+    model = os.environ[pipeline.JUDGE_ENVIRONMENT["model"]]
+    problem = pipeline.judge_problem(model)
+    if problem is not None:
+        print(f"not judging: {problem}", file=sys.stderr)
+        return EXIT_INCOMPLETE
     finished = await judge_pass(store, run_id, model, _settings(), pipeline.judge)
     return 0 if finished else EXIT_INCOMPLETE
 
 
+def _check_judge() -> int:
+    """In a judge's own process: would Trentina judge with this model?"""
+    from . import pipeline
+
+    problem = pipeline.judge_problem(os.environ[pipeline.JUDGE_ENVIRONMENT["model"]])
+    print(problem or "judge configured")
+    return 1 if problem else 0
+
+
 async def _check() -> int:
-    """Prove the image can do its job without a key: Trentina imports, the
-    classifier loads, and a document comes back with L1 and L2 opinions."""
+    """Prove the image can do its job, with no real key and no model call:
+    Trentina imports, the classifier loads and gives an opinion, and every
+    configured judge model would be the one Trentina asks, with a prompt
+    pack of its own."""
     from . import pipeline
 
     verdict = await pipeline.judge("The maintenance window is Tuesday at 02:00 UTC.", "check")
     print(f"trentina {pipeline.versions()}, l1 {verdict['l1_risk']}, l2 {verdict['l2_label']}")
-    return 0 if verdict["l2_label"] else 1
+    judges = _settings().judges
+    configured = [await _model_process(judge, "check-judge") for judge in judges]
+    return 0 if verdict["l2_label"] and judges and all(configured) else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -96,18 +127,20 @@ def main(argv: list[str] | None = None) -> int:
     judge = commands.add_parser("judge", help="one judge model's pass of a run (internal)")
     judge.add_argument("--run", type=int, required=True)
     imported = commands.add_parser("import", help="load a collect-wild run's artifacts")
-    imported.add_argument("--documents", type=Path, required=True)
-    imported.add_argument("--judged", type=Path, nargs="*", default=[])
-    commands.add_parser("check", help="verify the image without a key")
+    imported.add_argument("artifacts", type=Path, help="the directory gh run download wrote")
+    commands.add_parser("check", help="verify the image without a real key")
+    commands.add_parser("check-judge", help="one judge's configuration (internal)")
     args = parser.parse_args(argv)
     if args.command == "check":
         return asyncio.run(_check())
+    if args.command == "check-judge":
+        return _check_judge()
     store = Store(os.environ.get("COLLECTOR_DB", "/data/collector.db"))
     if args.command == "run":
         return asyncio.run(_run(store))
     if args.command == "judge":
         return asyncio.run(_judge(store, args.run))
-    print(f"imported as run {import_run(store, args.documents, args.judged, time.time())}")
+    print(f"imported as run {import_run(store, args.artifacts, time.time())}")
     return 0
 
 

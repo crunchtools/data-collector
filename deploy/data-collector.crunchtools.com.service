@@ -18,3 +18,6 @@ ExecStart=/usr/bin/podman run \
     --env-file /srv/data-collector.crunchtools.com/config/collector.env \
     -v /srv/data-collector.crunchtools.com/data:/data:Z \
     quay.io/crunchtools/data-collector:latest run
+# A run killed by the timeout must not go on spending in a container that
+# outlived the unit.
+ExecStopPost=-/usr/bin/podman rm -f data-collector.crunchtools.com

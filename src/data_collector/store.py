@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS verdicts (
     l2_label TEXT,
     l2_score REAL,
     l3_verdict TEXT NOT NULL,
-    l3_risk TEXT
+    l3_risk TEXT,
+    l3_detail TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_verdicts_document ON verdicts(document_id, model);
@@ -75,19 +76,33 @@ UNAVAILABLE = "unavailable"
 """The ``l3_verdict`` of an ask the judge did not answer. It is a row too:
 the ask was made, and it is owed again. ``flagged`` and ``clean`` are answers."""
 
-# Documents with fewer answers from a model than asked for, counting only
-# verdicts reached under the same Trentina version as the given run.
+MAX_UNANSWERED = 3
+"""Runs in which one judge may leave one document unanswered before the
+document is left alone. Runs, not asks: an outage that swallows a day's
+three asks is one failure, not three. Some documents can never be answered (a reply the
+judge cannot form, a canary it leaks), and asking daily for ever would both
+waste the budget and, with a few of them at the head of the queue, stop the
+judge reaching anything new."""
+
+# Documents a model still owes answers on: fewer answers than asked for and
+# fewer than MAX_UNANSWERED runs that failed on it, counting only asks made under the same
+# Trentina version as the given run. Newest first, so a backlog never stands
+# between a judge and today's documents.
 _PENDING = """
-SELECT d.id, d.url, d.text, ? - COUNT(v.id) AS owed
+SELECT d.id, d.url, d.text,
+       :votes - COALESCE(SUM(v.l3_verdict != 'unavailable'), 0) AS owed
 FROM documents d
 LEFT JOIN verdicts v
-    ON v.document_id = d.id AND v.model = ? AND v.l3_verdict != 'unavailable'
+    ON v.document_id = d.id AND v.model = :model
     AND v.run_id IN (
         SELECT id FROM runs
-        WHERE trentina_version = (SELECT trentina_version FROM runs WHERE id = ?)
+        WHERE trentina_version = (SELECT trentina_version FROM runs WHERE id = :run_id)
     )
-GROUP BY d.id HAVING owed > 0
-ORDER BY d.first_seen, d.id
+GROUP BY d.id
+HAVING owed > 0 AND COUNT(DISTINCT CASE WHEN v.l3_verdict = 'unavailable' THEN v.run_id END)
+    < :max_unanswered
+ORDER BY d.first_seen DESC, d.id
+LIMIT :most
 """
 
 _ANSWER_COUNTS = """
@@ -168,20 +183,37 @@ class Store:
         )
         self.db.commit()
 
-    def pending(self, run_id: int, model: str, votes: int) -> list[Pending]:
-        """Documents with fewer than ``votes`` answers from ``model`` under the
-        Trentina version of ``run_id``, oldest first."""
-        rows = self.db.execute(_PENDING, (votes, model, run_id)).fetchall()
+    def pending(self, run_id: int, model: str, votes: int, most: int) -> list[Pending]:
+        """Up to ``most`` documents with fewer than ``votes`` answers from
+        ``model`` under the Trentina version of ``run_id``, newest first,
+        leaving out any it has left unanswered in ``MAX_UNANSWERED`` runs."""
+        asked = {
+            "votes": votes,
+            "model": model,
+            "run_id": run_id,
+            "max_unanswered": MAX_UNANSWERED,
+            "most": most,
+        }
+        rows = self.db.execute(_PENDING, asked).fetchall()
         return [Pending(row["id"], row["url"], row["text"], row["owed"]) for row in rows]
 
     def add_verdict(
         self, run_id: int, document_id: str, model: str, verdict: dict[str, Any]
     ) -> None:
-        """One ask's result. ``verdict`` carries the six verdict columns."""
-        names = ("flagged_by", "l1_risk", "l2_label", "l2_score", "l3_verdict", "l3_risk")
+        """One ask's result. ``verdict`` carries the verdict columns;
+        ``l3_detail`` says why an unanswered ask went unanswered."""
+        names = (
+            "flagged_by",
+            "l1_risk",
+            "l2_label",
+            "l2_score",
+            "l3_verdict",
+            "l3_risk",
+            "l3_detail",
+        )
         self.db.execute(
             "INSERT INTO verdicts (run_id, document_id, model, flagged_by, l1_risk, l2_label, "
-            "l2_score, l3_verdict, l3_risk) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "l2_score, l3_verdict, l3_risk, l3_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (run_id, document_id, model, *(verdict.get(name) for name in names)),
         )
         self.db.commit()

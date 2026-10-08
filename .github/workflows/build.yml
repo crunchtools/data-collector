@@ -94,10 +94,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # No key: Trentina imports, its classifier loads, one sentence is judged
-      # by L1 and L2. Read-only root, as the host runs it.
+      # No real key and no model call: Trentina imports, its classifier loads
+      # and judges one sentence, and each configured judge model is the one
+      # Trentina would ask, with a prompt pack of its own. Read-only root, as
+      # the host runs it.
       - name: Check the image
-        run: docker run --rm --read-only --tmpfs /tmp data-collector:test check
+        run: |
+          docker run --rm --read-only --tmpfs /tmp \
+            -e OPENROUTER_API_KEY=not-a-key data-collector:test check
 
       - name: Build and push
         uses: docker/build-push-action@v7

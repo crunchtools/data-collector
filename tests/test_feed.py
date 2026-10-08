@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from data_collector.feed import MOLTBOOK_API, PAUSE, Document, Moltbook
+from data_collector.feed import MOLTBOOK_API, PAUSE, Document, FeedError, Moltbook
 
 LONG = "A comment long enough to be a document, addressed to whoever reads this thread."
 REPLY = "A reply under it, also long enough to be a document in its own right, at depth one."
@@ -69,3 +69,54 @@ async def test_collection_stops_at_the_limit_with_comments_at_most_half() -> Non
 def test_a_documents_id_is_its_text() -> None:
     assert Document("post", "u1", LONG).id == Document("comment", "u2", LONG).id
     assert Document("post", "u1", LONG).id != Document("post", "u1", REPLY).id
+
+
+async def test_one_request_that_fails_costs_one_document_not_the_run() -> None:
+    """A post deleted between the listing and the read is a 404. It is
+    counted and skipped; everything else is still collected."""
+
+    async def fetch(url: str) -> bytes:
+        path = url.removeprefix(f"{MOLTBOOK_API}/")
+        if path == "posts/n1":
+            raise FeedError("status 404")
+        return json.dumps(_api(path)).encode()
+
+    async def pause(_seconds: float) -> None:
+        return None
+
+    feed = Moltbook(fetch, pause)
+    documents = await feed.documents(10)
+    assert [d.url.rsplit("/", 1)[-1] for d in documents if d.kind == "post"] == ["n2"]
+    assert feed.failed == 1
+
+
+async def test_text_that_cannot_be_encoded_is_stored_not_fatal() -> None:
+    """JSON may carry a lone surrogate. One hostile comment must not stop a run."""
+
+    async def fetch(url: str) -> bytes:
+        path = url.removeprefix(f"{MOLTBOOK_API}/")
+        if path.startswith("posts/h1/comments"):
+            lone = "\\ud83d"
+            return ('{"comments": [{"content": "' + lone + LONG + '", "replies": []}]}').encode()
+        return json.dumps(_api(path)).encode()
+
+    async def pause(_seconds: float) -> None:
+        return None
+
+    documents = await Moltbook(fetch, pause).documents(2)
+    assert documents[0].text.endswith(LONG)
+    assert len(documents[0].id) == 16
+
+
+async def test_whitespace_is_not_a_document() -> None:
+    async def fetch(url: str) -> bytes:
+        path = url.removeprefix(f"{MOLTBOOK_API}/")
+        if path.startswith("posts/h1/comments"):
+            return json.dumps({"comments": [{"content": " " * 80, "replies": []}]}).encode()
+        return json.dumps(_api(path)).encode()
+
+    async def pause(_seconds: float) -> None:
+        return None
+
+    documents = await Moltbook(fetch, pause).documents(4)
+    assert all(d.text.strip() for d in documents)

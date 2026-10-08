@@ -13,10 +13,11 @@ from typing import TYPE_CHECKING, Any
 import httpx
 import pytest
 
+from data_collector.__main__ import judge_environment
 from data_collector.budget import KEY_URL, Budget, budget
 from data_collector.collect import GIVE_UP_AFTER, Judge, Settings, import_run, judge_pass, run
 from data_collector.feed import Document
-from data_collector.store import UNAVAILABLE, Store
+from data_collector.store import MAX_UNANSWERED, UNAVAILABLE, Store
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -58,7 +59,7 @@ class Rig:
             self.asks.append((judge.model, text))
             self.used += 0.01
             if judge.model in self.down:
-                return {"l3_verdict": UNAVAILABLE}
+                return {"l3_verdict": UNAVAILABLE, "l3_detail": "judge down"}
             flagged = "system prompt" in text
             return {
                 "l3_verdict": "flagged" if flagged else "clean",
@@ -168,23 +169,28 @@ async def test_a_new_trentina_version_judges_everything_again(rig: Rig) -> None:
 
 
 def test_an_earlier_github_run_is_loaded_as_what_it_was(rig: Rig, tmp_path: Path) -> None:
-    documents = tmp_path / "wild.json"
+    (tmp_path / "wild-documents").mkdir()
+    (tmp_path / "wild-judge-v-a").mkdir()
     found = [{"id": d.id, "kind": d.kind, "url": d.url, "text": d.text} for d in (ATTACK, BENIGN)]
-    documents.write_text(json.dumps({"source": "moltbook", "documents": found}))
-    judged = tmp_path / "judge.json"
+    (tmp_path / "wild-documents" / "wild.json").write_text(
+        json.dumps({"source": "moltbook", "documents": found})
+    )
     verdicts = [
         {"document": ATTACK.id, "votes": [True, True, None]},
         {"document": BENIGN.id, "votes": [False, False, False]},
+        {"document": "not-collected", "votes": [True]},
     ]
-    judged.write_text(json.dumps({"model": "v/a", "verdicts": verdicts}))
-    run_id = import_run(rig.store, documents, [judged], 5.0)
+    (tmp_path / "wild-judge-v-a" / "detonation.json").write_text(
+        json.dumps({"model": "v/a", "verdicts": verdicts})
+    )
+    run_id = import_run(rig.store, tmp_path, 5.0)
     assert rig.rows("SELECT trentina_version, outcome, collected FROM runs") == [
         ("benchmark", "imported", 2)
     ]
     assert rig.rows("SELECT asks, answered FROM run_models") == [(6, 5)]
     # Not the pipeline's own verdicts: the pipeline still owes all of its own.
     own = rig.store.open_run("moltbook", ("1.0.1", "11"), 6.0)
-    assert [p.owed for p in rig.store.pending(own, "v/a", 3)] == [3, 3]
+    assert [p.owed for p in rig.store.pending(own, "v/a", 3, 10)] == [3, 3]
     assert run_id != own
 
 
@@ -205,3 +211,86 @@ async def test_a_budget_that_cannot_be_read_stops_the_run() -> None:
     refused = httpx.MockTransport(lambda _request: httpx.Response(401))
     with pytest.raises(httpx.HTTPStatusError):
         await budget("k", refused)
+
+
+async def test_a_document_no_judge_can_answer_is_left_alone_after_three_runs(rig: Rig) -> None:
+    """A reply the judge cannot form, or a canary it leaks, comes back
+    unanswered every time. Asked daily for ever, a few such documents would
+    stand between a judge and everything new."""
+    rig.found = [ATTACK]
+    rig.down = {"v/a", "v/b"}
+    for _ in range(MAX_UNANSWERED):
+        assert await rig.run() == "incomplete"
+    assert rig.rows("SELECT COUNT(*), MIN(l3_detail) FROM verdicts WHERE model = 'v/a'") == [
+        (3 * MAX_UNANSWERED, "judge down")
+    ]
+    before = len(rig.asks)
+    rig.found = [ATTACK, BENIGN]
+    rig.down = set()
+    assert await rig.run() == "ok"
+    assert {text for _, text in rig.asks[before:]} == {BENIGN.text}
+
+
+async def test_a_run_that_fails_says_so_and_keeps_what_it_collected(rig: Rig) -> None:
+    calls = 0
+
+    async def budget_goes_away() -> Budget:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise httpx.ConnectError("down")
+        return Budget(0.0, 10.0)
+
+    with pytest.raises(httpx.ConnectError):
+        await run(
+            rig.store,
+            rig,
+            SETTINGS,
+            versions=("1.0.1", "11"),
+            spent=budget_goes_away,
+            pass_for=rig.pass_for,
+            clock=rig.clock,
+        )
+    assert rig.rows("SELECT outcome, collected, new_documents FROM runs") == [
+        ("error: ConnectError", 2, 2)
+    ]
+    assert rig.rows("SELECT COUNT(*) FROM runs WHERE finished_at IS NULL") == [(0,)]
+
+
+async def test_a_run_with_no_judge_configured_is_not_called_ok(rig: Rig) -> None:
+    quiet = Settings(limit=10, votes=3, concurrency=4, floor=0.5, judges=())
+    outcome = await run(
+        rig.store,
+        rig,
+        quiet,
+        versions=("1.0.1", "11"),
+        spent=rig.spent,
+        pass_for=rig.pass_for,
+        clock=rig.clock,
+    )
+    assert outcome == "incomplete"
+
+
+@pytest.mark.parametrize(
+    ("spec", "judge"),
+    [
+        ("vendor/model", Judge("vendor/model")),
+        ("vendor/model:minimal", Judge("vendor/model", "minimal")),
+        (" vendor/model:high ", Judge("vendor/model", "high")),
+        ("vendor/model:free", Judge("vendor/model:free")),
+        ("vendor/model:thinking:low", Judge("vendor/model:thinking", "low")),
+    ],
+)
+def test_a_colon_in_a_models_own_name_is_not_an_effort(spec: str, judge: Judge) -> None:
+    assert Judge.parse(spec) == judge
+
+
+def test_a_judges_process_is_told_which_model_in_trentinas_own_words() -> None:
+    """The names are Trentina's. A wrong one is not an error there: the judge
+    just never runs, and every ask comes back unanswered."""
+    names = {"provider": "P", "model": "M", "effort": "E", "patience": "T"}
+    base = {"E": "high", "OTHER": "kept"}
+    plain = judge_environment(Judge("vendor/model"), names, base)
+    assert plain == {"P": "openrouter", "M": "vendor/model", "T": "600", "OTHER": "kept"}
+    assert judge_environment(Judge("vendor/model", "minimal"), names, base)["E"] == "minimal"
+    assert base == {"E": "high", "OTHER": "kept"}

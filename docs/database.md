@@ -7,7 +7,7 @@ One SQLite file, `collector.db`, in the mounted data directory.
 | `documents` | distinct text | `id`, `source`, `kind`, `url`, `text`, `first_seen`, `last_seen`, `times_seen` |
 | `runs` | run | `started_at`, `trentina_version`, `perimeter_version`, `collected`, `new_documents`, `cost_usd`, `outcome` |
 | `run_models` | judge model in a run | `asks`, `answered`, `cost_usd` |
-| `verdicts` | ask | `run_id`, `document_id`, `model`, `flagged_by`, `l1_risk`, `l2_label`, `l2_score`, `l3_verdict`, `l3_risk` |
+| `verdicts` | ask | `run_id`, `document_id`, `model`, `flagged_by`, `l1_risk`, `l2_label`, `l2_score`, `l3_verdict`, `l3_risk`, `l3_detail` |
 
 `flagged_by` is the layer that would have refused the document (`L1`, `L2`,
 `L3`) or NULL when none would. `l3_verdict` is `flagged`, `clean` or

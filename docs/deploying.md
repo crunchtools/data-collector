@@ -29,11 +29,12 @@ Runs of Trentina's `collect-wild` workflow can be loaded from their
 downloaded artifacts:
 
 ```bash
+gh run download <run-id> --repo crunchtools/trentina --dir ./artifacts
 podman run --rm -v /srv/data-collector.crunchtools.com/data:/data:Z \
-  -v ./artifacts:/in:ro,Z quay.io/crunchtools/data-collector:latest \
-  import --documents /in/wild-documents/wild.json \
-  --judged /in/wild-judge-*/detonation.json
+  -v ./artifacts:/in:ro,Z quay.io/crunchtools/data-collector:latest import /in
 ```
+
+Import a run once: a second import records its verdicts a second time.
 
 ## Monitoring
 
