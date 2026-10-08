@@ -142,13 +142,29 @@ class Store:
         self.db.commit()
         return int(cursor.lastrowid or 0)
 
-    def close_run(self, run_id: int, now: float, **columns: Any) -> None:
-        """Finish a run: ``collected``, ``new_documents``, ``cost_usd``, ``outcome``."""
-        names = ("collected", "new_documents", "cost_usd", "outcome")
+    def close_run(
+        self,
+        run_id: int,
+        now: float,
+        *,
+        collected: int,
+        new_documents: int,
+        outcome: str,
+        cost_usd: float | None = None,
+    ) -> None:
+        """Finish a run with what it collected, what it cost and how it ended."""
         self.db.execute(
-            "UPDATE runs SET finished_at = ?, collected = ?, new_documents = ?, cost_usd = ?, "
-            "outcome = ? WHERE id = ?",
-            (now, *(columns.get(name) for name in names), run_id),
+            "UPDATE runs SET finished_at = :now, collected = :collected, "
+            "new_documents = :new_documents, cost_usd = :cost_usd, outcome = :outcome "
+            "WHERE id = :run_id",
+            {
+                "now": now,
+                "collected": collected,
+                "new_documents": new_documents,
+                "cost_usd": cost_usd,
+                "outcome": outcome,
+                "run_id": run_id,
+            },
         )
         self.db.commit()
 
