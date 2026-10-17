@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
     from pathlib import Path
 
     from .feed import Document
@@ -130,6 +130,8 @@ MIGRATIONS = (
     """,
 )
 
+T = TypeVar("T")
+
 UNAVAILABLE = "unavailable"
 """The ``l3_verdict`` of an ask the judge did not answer. It is a row too:
 the ask was made, and it is owed again. ``flagged`` and ``clean`` are answers."""
@@ -202,7 +204,7 @@ LIMIT :most
 
 # Documents with no screen under this pipeline. Newest first.
 _UNSCREENED = """
-SELECT d.id, d.url, d.text FROM documents d
+SELECT d.id, d.url, d.text, 1 AS owed FROM documents d
 WHERE NOT EXISTS (
     SELECT 1 FROM screens s WHERE s.document_id = d.id AND s.pipeline = :pipeline
 )
@@ -254,6 +256,14 @@ class Final:
     by: str
 
 
+def _pending(row: sqlite3.Row) -> Pending:
+    return Pending(row["id"], row["url"], row["text"], row["owed"])
+
+
+def _unlabelled(row: sqlite3.Row) -> Unlabelled:
+    return Unlabelled(row["id"], row["text"], row["failures"])
+
+
 class Store:
     """The collector's database at ``path``, created on first use and
     migrated to the latest schema."""
@@ -266,9 +276,12 @@ class Store:
         for script in MIGRATIONS[version:]:
             self.db.executescript(script)
 
-    def _select(self, query: str, asked: dict[str, Any]) -> list[sqlite3.Row]:
-        """The rows ``query`` gives with ``asked`` as its named parameters."""
-        return self.db.execute(query, asked).fetchall()
+    def _select(
+        self, query: str, asked: dict[str, Any], make: Callable[[sqlite3.Row], T]
+    ) -> list[T]:
+        """Each row ``query`` gives with ``asked`` as its named parameters, made
+        into what the caller wants by ``make``."""
+        return [make(row) for row in self.db.execute(query, asked)]
 
     def add_documents(self, source: str, found: Iterable[Document], now: float) -> int:
         """Record each document as seen at ``now``. Returns how many were new."""
@@ -346,8 +359,7 @@ class Store:
             "max_unanswered": MAX_UNANSWERED,
             "most": most,
         }
-        rows = self._select(_PENDING, asked)
-        return [Pending(row["id"], row["url"], row["text"], row["owed"]) for row in rows]
+        return self._select(_PENDING, asked, _pending)
 
     def ask_cost(self, model: str) -> float | None:
         """Dollars one ask of ``model`` has cost on average, or None before
@@ -392,8 +404,7 @@ class Store:
 
     def unscreened(self, pipeline: str, most: int) -> list[Pending]:
         """Up to ``most`` documents with no screen under ``pipeline``, newest first."""
-        rows = self._select(_UNSCREENED, {"pipeline": pipeline, "most": most})
-        return [Pending(row["id"], row["url"], row["text"], 1) for row in rows]
+        return self._select(_UNSCREENED, {"pipeline": pipeline, "most": most}, _pending)
 
     def add_screen(self, document_id: str, pipeline: str, verdict: dict[str, Any]) -> None:
         """What L1 and L2 made of a document under ``pipeline``."""
@@ -423,10 +434,8 @@ class Store:
     def unlabelled(self, labeller: str, prompt_sha: str, most: int) -> list[Unlabelled]:
         """Up to ``most`` documents ``labeller`` owes a label on under
         ``prompt_sha``, newest first, with the runs it has failed on each."""
-        rows = self._select(
-            _UNLABELLED, {"labeller": labeller, "prompt_sha": prompt_sha, "most": most}
-        )
-        return [Unlabelled(row["id"], row["text"], row["failures"]) for row in rows]
+        asked = {"labeller": labeller, "prompt_sha": prompt_sha, "most": most}
+        return self._select(_UNLABELLED, asked, _unlabelled)
 
     def add_label(
         self,
