@@ -9,17 +9,18 @@ Type=oneshot
 # or two each at low effort.
 TimeoutStartSec=14400
 ExecStartPre=-/usr/bin/podman rm -f data-collector-label.crunchtools.com
-ExecStartPre=/usr/bin/podman pull -q quay.io/crunchtools/data-collector-labeller:latest
+ExecStartPre=/usr/bin/podman pull -q quay.io/crunchtools/data-collector:latest
 # HOME (/tmp/home) is on the tmpfs: Claude Code's state lasts one run. The
-# data volume is the only mount, and the labeller holds no tool and no
-# credential but the subscription's inference token.
+# data volume is the only mount. The collector's image, with labeller.env
+# alone: no tool and no credential but the subscription's inference token.
 ExecStart=/usr/bin/podman run \
     --rm \
     --name data-collector-label.crunchtools.com \
     --memory=2g --memory-swap=2g \
     --read-only --tmpfs /tmp:uid=65532,mode=0700 \
     --cap-drop=all --security-opt=no-new-privileges \
+    -e HOME=/tmp/home \
     --env-file /srv/data-collector.crunchtools.com/config/labeller.env \
     -v /srv/data-collector.crunchtools.com/data:/data:Z \
-    quay.io/crunchtools/data-collector-labeller:latest run
+    quay.io/crunchtools/data-collector:latest label
 ExecStopPost=-/usr/bin/podman rm -f data-collector-label.crunchtools.com

@@ -329,3 +329,15 @@ def test_without_claude_code_there_is_no_ask_and_no_check(
     with pytest.raises(LabellerError, match=r"^claude not found$"):
         labeller.claude("m/opus", "message", {"a"})
     assert labeller.main(["check"]) == 1
+
+
+@pytest.mark.parametrize(("command", "given"), [("label", ["run"]), ("check-label", ["check"])])
+def test_the_collector_image_runs_labelling(
+    monkeypatch: pytest.MonkeyPatch, command: str, given: list[str]
+) -> None:
+    from data_collector.__main__ import main
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(labeller, "main", lambda argv: calls.append(argv) or 0)
+    assert main([command]) == 0
+    assert calls == [given]
