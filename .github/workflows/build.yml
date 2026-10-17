@@ -19,9 +19,6 @@ on:
 env:
   QUAY_IMAGE: quay.io/crunchtools/data-collector
   GHCR_IMAGE: ghcr.io/crunchtools/data-collector
-  # The labeller (Containerfile.labeller), built on Josui's image.
-  QUAY_LABELLER: quay.io/crunchtools/data-collector-labeller
-  GHCR_LABELLER: ghcr.io/crunchtools/data-collector-labeller
 
 permissions:
   contents: read
@@ -109,6 +106,13 @@ jobs:
           docker run --rm --read-only --tmpfs /tmp \
             -e OPENROUTER_API_KEY=not-a-key data-collector:test check
 
+      # No token and no model call: Claude Code runs as the image's user on
+      # a read-only root, and the labelling prompt and schema are packaged.
+      - name: Check labelling
+        run: |
+          docker run --rm --read-only --tmpfs /tmp:uid=65532 \
+            -e HOME=/tmp/home data-collector:test check-label
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
@@ -119,48 +123,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      # The labeller in the same job, so the same required check covers it.
-      - name: Labeller metadata
-        id: labeller-meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.QUAY_LABELLER }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=
-
-      - name: Build labeller image for testing
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Containerfile.labeller
-          load: true
-          tags: data-collector-labeller:test
-          cache-from: type=gha,scope=labeller
-          cache-to: type=gha,mode=max,scope=labeller
-
-      # No token and no model call: Claude Code runs as the labeller's user
-      # on a read-only root, and the package, prompt and schema import.
-      - name: Check the labeller image
-        run: |
-          docker run --rm --read-only --tmpfs /tmp:uid=65532 \
-            data-collector-labeller:test check
-
-      - name: Build and push labeller
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Containerfile.labeller
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.labeller-meta.outputs.tags }}
-          labels: ${{ steps.labeller-meta.outputs.labels }}
-          cache-from: type=gha,scope=labeller
-          cache-to: type=gha,mode=max,scope=labeller
 
       - name: Run Trivy vulnerability scanner
         continue-on-error: true
@@ -217,26 +179,3 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-
-      - name: Labeller metadata
-        id: labeller-meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.GHCR_LABELLER }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=
-
-      - name: Build and push labeller
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Containerfile.labeller
-          push: true
-          tags: ${{ steps.labeller-meta.outputs.tags }}
-          labels: ${{ steps.labeller-meta.outputs.labels }}
-          cache-from: type=gha,scope=labeller

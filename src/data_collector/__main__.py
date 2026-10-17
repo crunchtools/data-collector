@@ -1,8 +1,11 @@
-"""Command line: ``run`` and ``evaluate`` daily, ``review`` and ``report`` by
-hand, ``import`` earlier results, ``check`` the image.
+"""Command line: ``run``, ``label`` and ``evaluate`` daily, ``review`` and
+``report`` by hand, ``import`` earlier results, ``check`` and ``check-label``
+the image.
 
-Settings come from the environment, as the container is given them
-(``deploy/collector.env.example`` lists every one):
+Settings come from the environment, as the container is given them. Those
+below are every collector command's (``deploy/collector.env.example`` lists
+them); ``label`` has its own, in ``label.py`` and
+``deploy/labeller.env.example``:
 
 * ``COLLECTOR_DB``: the SQLite file. Default ``/data/collector.db``.
 * ``COLLECTOR_MODELS``: judge models for ``evaluate``, comma-separated,
@@ -189,6 +192,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="data_collector", description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("run", help="collect the feed and screen what is new")
+    commands.add_parser("label", help="label documents with Claude Code, for the answer key")
     commands.add_parser("evaluate", help="judge the evaluation set under this pipeline")
     commands.add_parser("review", help="label disputed documents by hand (a terminal only)")
     commands.add_parser("report", help="judges and layers scored against the labels")
@@ -201,6 +205,7 @@ def _parser() -> argparse.ArgumentParser:
     imported.add_argument("artifacts", type=Path, help="the directory gh run download wrote")
     commands.add_parser("check", help="verify the image without a real key")
     commands.add_parser("check-judge", help="one judge's configuration (internal)")
+    commands.add_parser("check-label", help="verify labelling without a token")
     return parser
 
 
@@ -210,6 +215,13 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_check())
     if args.command == "check-judge":
         return _check_judge()
+    if args.command in ("label", "check-label"):
+        # Its own settings and its own process: label.py reads only the
+        # environment the label unit gives it, the subscription token among
+        # them, and loads neither Trentina nor httpx.
+        from .label import main as label
+
+        return label(["check"] if args.command == "check-label" else ["run"])
     store = Store(os.environ.get("COLLECTOR_DB", "/data/collector.db"))
     if args.command == "run":
         return asyncio.run(_run(store))

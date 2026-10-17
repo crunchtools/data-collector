@@ -1,12 +1,12 @@
 # Deploying
 
-There are two images, both jobs rather than servers: each runs, writes to
-the database, and exits.
-
-| Image | Built from | Runs |
-|---|---|---|
-| `quay.io/crunchtools/data-collector` | `Containerfile`, on Trentina's image | `run` (collect and screen), `evaluate`, `review`, `report` |
-| `quay.io/crunchtools/data-collector-labeller` | `Containerfile.labeller`, on Josui's image | the labeller |
+There is one image, `quay.io/crunchtools/data-collector`, built from
+`Containerfile` on Trentina's image with Claude Code's native binary added.
+It is a job rather than a server: each command runs, writes to the database,
+and exits. `run` collects and screens, `label` labels, `evaluate` judges the
+evaluation set, and `review` and `report` are run by hand. The label unit
+and the others take separate env files, so the subscription token and the
+OpenRouter key are never in one process.
 
 ## On the host
 
@@ -69,8 +69,8 @@ non-major bump once the "Image gates" ruleset's checks pass: `test`, and
 proves every judge still has a prompt pack. A major bump waits for a person.
 The merge pushes `:latest`, which the next night's evaluation pulls.
 
-The labeller's image is pinned to a digest of Josui's, which Dependabot
-updates the same way but which nothing merges on its own.
+Claude Code is pinned in `Containerfile` by version and SHA-256, to the
+version Josui runs, and is bumped by hand.
 ## Loading earlier results
 
 Runs of Trentina's `collect-wild` workflow can be loaded from their

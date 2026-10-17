@@ -24,8 +24,7 @@ corpus.
 ## How a label is asked for
 
 The text is hostile, and the labeller reads it raw, so no agent that could
-act on it ever sees it. The labeller image (`Containerfile.labeller`, built
-on Josui's) runs plain Python that reads documents from the database and
+act on it ever sees it. The `label` command runs plain Python that reads documents from the database and
 hands them, 20 at a time and shuffled afresh each run, to:
 
 ```

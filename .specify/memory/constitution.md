@@ -1,6 +1,6 @@
 # data-collector Constitution
 
-> **Version:** 1.1.0
+> **Version:** 1.2.0
 > **Ratified:** 2026-10-08
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.24.0
@@ -12,15 +12,15 @@ against this repo's files by `constitution.yml`. They are not restated here.
 
 ## Image Purpose
 
-Jobs, in two images, that write to one SQLite file and serve nothing:
+Jobs, in one image, that write to one SQLite file and serve nothing:
 
 - **Collector** (`Containerfile`): once a day it reads a sample of a feed
   where prompt injection is likely, stores each new document and screens it
   with Trentina's L1 and L2 alone. Each night it runs Trentina's defense
   pipeline, under each supported judge model, over the labelled evaluation
   set, when the pipeline has changed since it last did.
-- **Labeller** (`Containerfile.labeller`): each night Claude Code, with no
-  tools, labels each document for the answer key the verdicts are scored
+- **Labeller** (`label`, in the same image): each night Claude Code, with
+  no tools, labels each document for the answer key the verdicts are scored
   against.
 
 ## Base Image
@@ -30,15 +30,16 @@ image directly. Trentina is itself built on Hummingbird and is distributed
 as an image only (Security Gateway profile I): a library install would be
 its pipeline with the pinned classifier model and parsers missing. Building
 on its image is the one way to call the pipeline that ships. The image adds
-a single package directory and installs nothing.
+a single package directory and Claude Code, and installs nothing.
 
 `src/data_collector/pipeline.py` is the only module that imports Trentina.
 
-The labeller's image is built on `quay.io/crunchtools/josui`, pinned by
-digest, for the same reason: it is the fleet's packaging of a pinned Claude
-Code. It replaces Josui's entrypoint, runs as the database's owner (uid
-65532), and adds the same package directory. `label.py`, `store.py` and the
-prompt are all it uses, and they need the standard library only.
+Claude Code is its native Linux binary, which links glibc only and needs
+no Node. A Hummingbird builder stage downloads it and checks it against a
+SHA-256 pinned in `Containerfile`, and the image copies it to
+`/usr/bin/claude`. Its version follows Josui's pin and is bumped by hand.
+`label` runs in a process of its own, with the label unit's environment
+only; `label.py` and `store.py` need the standard library only.
 
 ## Hostile Content
 
@@ -81,3 +82,4 @@ only once both pass.
 |---------|------|---------|
 | 1.0.0 | 2026-10-08 | Initial constitution |
 | 1.1.0 | 2026-10-17 | Labeller image; evaluation of the labelled set only; `review` the one place text is printed (#9) |
+| 1.2.0 | 2026-10-17 | One image: the labeller runs from the collector's, with Claude Code's native binary |

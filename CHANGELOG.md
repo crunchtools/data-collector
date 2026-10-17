@@ -15,8 +15,8 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - Labels (#9). Each night Claude Opus 5.5 and Claude Fable 5.1 label every
   document attack, borderline or benign, run by Claude Code with no tools on
-  the Claude subscription, from a second image, `data-collector-labeller`,
-  built on Josui's. A label is final when they agree or a person decides.
+  the Claude subscription, from the `label` command. The image carries
+  Claude Code's native binary, pinned by version and SHA-256. A label is final when they agree or a person decides.
 - `review`: a person settles disputed documents at a terminal, with control
   and format characters removed from what is shown.
 - Screens: L1 and L2 on every new document at collection, with no judge and

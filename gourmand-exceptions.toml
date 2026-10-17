@@ -23,4 +23,4 @@ justification = "One entry: S101 (use of assert) for tests/ only. pytest tests a
 check = "hidden_env_config"
 path = "src/data_collector/label.py"
 classification = "by_design"
-justification = "The labeller image's only configuration surface is its environment (constitution XIV), as for the collector. Every variable read is listed in this module's docstring and in deploy/labeller.env.example; none is hidden."
+justification = "Labelling's only configuration surface is its environment (constitution XIV), as for the collector. Every variable read is listed in this module's docstring and in deploy/labeller.env.example; none is hidden."

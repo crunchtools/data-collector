@@ -1,9 +1,10 @@
 """The labeller: every document labelled by each labeller model, on the Claude
 subscription, by Claude Code with no tools.
 
-This is the labeller image's entry point (``python3 -m data_collector.label``).
-That image is built on Josui's, which carries Claude Code, and has no httpx
+The collector image's ``label`` and ``check-label`` commands run it, in a
+process of their own with the label unit's environment. It loads no httpx
 and no Trentina: this module and ``store`` use the standard library only.
+Claude Code is the native binary the image copies to ``/usr/bin/claude``.
 
 The text is hostile, and no agent with a tool in reach ever reads it. This
 module is the orchestrator, and it is plain code: it reads documents from the
@@ -310,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
     if args == ["check"]:
         return _check()
     if args not in ([], ["run"]):
-        print("usage: python3 -m data_collector.label [run|check]", file=sys.stderr)
+        print("usage: python -m data_collector [label|check-label]", file=sys.stderr)
         return 2
     labellers = [
         name.strip()
