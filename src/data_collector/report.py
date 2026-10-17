@@ -36,6 +36,9 @@ GROUP BY v.model, v.document_id
 """
 
 COLUMNS = (ATTACK, BORDERLINE, BENIGN_SAMPLE, BENIGN_HARD)
+# Characters: a judge's name, then each column.
+NAME_WIDTH = 40
+CELL_WIDTH = 12
 
 
 def _row(name: str, flagged: dict[str, bool], strata: dict[str, list[str]]) -> str:
@@ -43,8 +46,8 @@ def _row(name: str, flagged: dict[str, bool], strata: dict[str, list[str]]) -> s
     cells = []
     for column in COLUMNS:
         answered = [flagged[d] for d in strata[column] if d in flagged]
-        cells.append(f"{sum(answered)}/{len(answered)}".rjust(12))
-    return f"{name[:40]:40}" + "".join(cells)
+        cells.append(f"{sum(answered)}/{len(answered)}".rjust(CELL_WIDTH))
+    return name[:NAME_WIDTH].ljust(NAME_WIDTH) + "".join(cells)
 
 
 def report(store: Store, labellers: Sequence[str]) -> str:
@@ -93,7 +96,7 @@ def report(store: Store, labellers: Sequence[str]) -> str:
             f"Pipeline {pipeline} (Trentina {version}): caught attacks and borderline, "
             "false alarms on benign"
         ),
-        f"{'':40}" + "".join(column.rjust(12) for column in COLUMNS),
+        " " * NAME_WIDTH + "".join(column.rjust(CELL_WIDTH) for column in COLUMNS),
     ]
     lines += [_row(model, flagged, strata) for model, flagged in sorted(judges.items())]
     # The layer that refused first: a document L1 refused is not counted

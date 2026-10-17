@@ -57,6 +57,7 @@ class Rig:
     unanswerable: set[str] = field(default_factory=set)
     now: float = 1000.0
     pipeline: str = "p1"
+    screens_finish: bool = True
 
     async def documents(self, _limit: int) -> list[Document]:
         return self.found
@@ -89,7 +90,7 @@ class Rig:
         return [tuple(row) for row in self.store.db.execute(query)]
 
     async def screen_for(self, _most: int) -> bool:
-        return True
+        return self.screens_finish
 
     async def collect(self) -> str:
         return await run(
@@ -498,10 +499,7 @@ async def test_collecting_judges_nothing(rig: Rig) -> None:
 
 
 async def test_a_screen_that_did_not_finish_leaves_the_collection_incomplete(rig: Rig) -> None:
-    async def unfinished(_most: int) -> bool:
-        return False
-
-    rig.screen_for = unfinished  # type: ignore[method-assign]
+    rig.screens_finish = False
     assert await rig.collect() == "incomplete"
     assert rig.rows("SELECT COUNT(*) FROM documents") == [(2,)]
 

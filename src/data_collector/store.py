@@ -78,13 +78,16 @@ CREATE INDEX IF NOT EXISTS idx_verdicts_document ON verdicts(document_id, model)
 """
 
 # Each entry takes the database from the version before it to its own index
-# + 1 (``PRAGMA user_version``). A new database runs them all; an existing one
-# runs what it has not. Never edit one that has shipped: add the next.
+# + 1, and says so itself (``PRAGMA user_version``), inside one transaction:
+# a migration and its stamp land together or not at all. A new database runs
+# them all; an existing one runs what it has not. Never edit one that has
+# shipped: add the next.
 MIGRATIONS = (
     # 1: labels, screens and the evaluation set (#9). A run says what it was
     # (`kind`) and which defense pipeline judged under it (`pipeline`), so a
     # Trentina release that changes nothing a verdict depends on owes nothing.
     """
+    BEGIN;
     ALTER TABLE runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'collect';
     ALTER TABLE runs ADD COLUMN pipeline TEXT;
     UPDATE runs SET pipeline = CASE trentina_version
@@ -122,6 +125,8 @@ MIGRATIONS = (
         why TEXT NOT NULL,
         added_at REAL NOT NULL
     );
+    PRAGMA user_version = 1;
+    COMMIT;
     """,
 )
 
@@ -258,10 +263,12 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
         version = int(self.db.execute("PRAGMA user_version").fetchone()[0])
-        for number, script in enumerate(MIGRATIONS[version:], start=version + 1):
-            # executescript commits first, so each migration and its version
-            # stamp land together or not at all.
-            self.db.executescript(f"BEGIN; {script}; PRAGMA user_version = {number}; COMMIT;")
+        for script in MIGRATIONS[version:]:
+            self.db.executescript(script)
+
+    def _select(self, query: str, asked: dict[str, Any]) -> list[sqlite3.Row]:
+        """The rows ``query`` gives with ``asked`` as its named parameters."""
+        return self.db.execute(query, asked).fetchall()
 
     def add_documents(self, source: str, found: Iterable[Document], now: float) -> int:
         """Record each document as seen at ``now``. Returns how many were new."""
@@ -339,7 +346,7 @@ class Store:
             "max_unanswered": MAX_UNANSWERED,
             "most": most,
         }
-        rows = self.db.execute(_PENDING, asked).fetchall()
+        rows = self._select(_PENDING, asked)
         return [Pending(row["id"], row["url"], row["text"], row["owed"]) for row in rows]
 
     def ask_cost(self, model: str) -> float | None:
@@ -385,7 +392,7 @@ class Store:
 
     def unscreened(self, pipeline: str, most: int) -> list[Pending]:
         """Up to ``most`` documents with no screen under ``pipeline``, newest first."""
-        rows = self.db.execute(_UNSCREENED, {"pipeline": pipeline, "most": most}).fetchall()
+        rows = self._select(_UNSCREENED, {"pipeline": pipeline, "most": most})
         return [Pending(row["id"], row["url"], row["text"], 1) for row in rows]
 
     def add_screen(self, document_id: str, pipeline: str, verdict: dict[str, Any]) -> None:
@@ -416,8 +423,9 @@ class Store:
     def unlabelled(self, labeller: str, prompt_sha: str, most: int) -> list[Unlabelled]:
         """Up to ``most`` documents ``labeller`` owes a label on under
         ``prompt_sha``, newest first, with the runs it has failed on each."""
-        asked = {"labeller": labeller, "prompt_sha": prompt_sha, "most": most}
-        rows = self.db.execute(_UNLABELLED, asked).fetchall()
+        rows = self._select(
+            _UNLABELLED, {"labeller": labeller, "prompt_sha": prompt_sha, "most": most}
+        )
         return [Unlabelled(row["id"], row["text"], row["failures"]) for row in rows]
 
     def add_label(

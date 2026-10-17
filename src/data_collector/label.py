@@ -24,12 +24,13 @@ labels. Settings come from the environment
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 import random
 import secrets
-import subprocess
+import shutil
 import sys
 import tempfile
 import time
@@ -132,11 +133,36 @@ def read_answer(output: str, wanted: set[str]) -> Answer:
     return Answer(models[0] if models else None, labels)
 
 
+async def _claude_code(*args: str, given: str = "", cwd: str | None = None) -> tuple[int, str]:
+    """Run Claude Code with ``args`` and ``given`` on stdin, no shell, and
+    return its exit status and stdout. Raises ``LabellerError`` when it is
+    not found or takes longer than ``ASK_TIMEOUT``."""
+    found = shutil.which("claude")
+    if found is None:
+        raise LabellerError("claude not found")
+    env = {**os.environ, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+    process = await asyncio.create_subprocess_exec(
+        found,
+        *args,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,  # it may echo the documents
+        cwd=cwd,
+        env=env,
+    )
+    try:
+        out, _ = await asyncio.wait_for(process.communicate(given.encode()), ASK_TIMEOUT)
+    except TimeoutError as exc:
+        process.kill()
+        await process.wait()
+        raise LabellerError("timeout") from exc
+    return int(process.returncode or 0), out.decode()
+
+
 def claude(labeller: str, message: str, wanted: set[str]) -> Answer:
     """One ask of Claude Code, as the labeller: no tools, no MCP servers, no
     settings files, no session kept, from an empty directory."""
-    command = [
-        "claude",
+    flags = (
         "-p",
         "--model",
         labeller,
@@ -154,26 +180,13 @@ def claude(labeller: str, message: str, wanted: set[str]) -> Answer:
         json.dumps(SCHEMA),
         "--system-prompt",
         PROMPT,
-    ]
-    env = {**os.environ, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+    )
     with tempfile.TemporaryDirectory() as empty:
-        try:
-            done = subprocess.run(  # noqa: S603 -- a fixed command, no shell
-                command,
-                input=message,
-                capture_output=True,
-                text=True,
-                timeout=ASK_TIMEOUT,
-                cwd=empty,
-                env=env,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise LabellerError("timeout") from exc
-    if done.returncode != 0:
-        raise LabellerError(f"exit {done.returncode}")
+        status, out = asyncio.run(_claude_code(*flags, given=message, cwd=empty))
+    if status != 0:
+        raise LabellerError(f"exit {status}")
     try:
-        return read_answer(done.stdout, wanted)
+        return read_answer(out, wanted)
     except ValueError as exc:  # not JSON
         raise LabellerError(type(exc).__name__) from exc
 
@@ -283,14 +296,13 @@ def run(
 def _check() -> int:
     """Prove the image can label, with no token and no model call: Claude
     Code runs, and the prompt and schema are packaged."""
-    done = subprocess.run(
-        ["claude", "--version"],  # noqa: S607 -- found on PATH, as in the image
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    print(f"claude {done.stdout.strip()}, prompt {PROMPT_SHA}, {len(SCHEMA)} schema keys")
-    return done.returncode
+    try:
+        status, out = asyncio.run(_claude_code("--version"))
+    except LabellerError as exc:
+        print(f"not labelling: {exc}", file=sys.stderr)
+        return 1
+    print(f"claude {out.strip()}, prompt {PROMPT_SHA}, {len(SCHEMA)} schema keys")
+    return status
 
 
 def main(argv: list[str] | None = None) -> int:
