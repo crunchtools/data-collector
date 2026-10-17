@@ -6,11 +6,36 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-17
+
+### Added
+- Labels (#9). Each night Claude Opus 5.5 and Claude Fable 5.1 label every
+  document attack, borderline or benign, run by Claude Code with no tools on
+  the Claude subscription, from a second image, `data-collector-labeller`,
+  built on Josui's. A label is final when they agree or a person decides.
+- `review`: a person settles disputed documents at a terminal, with control
+  and format characters removed from what is shown.
+- Screens: L1 and L2 on every new document at collection, with no judge and
+  no cost. A document the labellers agree is benign but a screen refused is
+  disputed.
+- `evaluate`: the judges are run over the evaluation set (attacks,
+  borderline, human-settled benign and a frozen benign sample) only.
+- `report`: each judge, and L1 and L2, scored against the labels. Numbers
+  only.
+- Nightly label and evaluate units under a target, at 01:30.
+
 ### Changed
+- `run` collects and screens; it no longer judges. Verdicts are owed again
+  when the defense pipeline's fingerprint changes, not on every Trentina
+  release.
+- A judge is kept under its model and effort (`vendor/model:effort`).
+  Existing `google/gemini-3.8-flash` rows are migrated to `:minimal`.
+- The database migrates itself on open (`PRAGMA user_version`).
 - The image is rebuilt when Trentina's is, on the fleet's
   `parent-image-updated` event.
 - A non-major bump of the Trentina base is merged on its own once `test`
   and the image's `check` pass, and Dependabot looks for one daily.
+- Built on Trentina 1.10.1 (was 1.0.1).
 
 ## [0.2.0] - 2026-10-08
 

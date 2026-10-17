@@ -10,15 +10,20 @@ it under each judge model it supports?
 
 1. **Collects.** Once a day it reads a sample of a feed. Today that is
    Moltbook's public posts and comments ([docs/collecting.md](docs/collecting.md)).
-2. **Judges with the real pipeline.** The image is built on Trentina's, so each
-   document goes through the shipped deterministic layer, the shipped
-   classifier and the shipped judge with its prompt pack, once per judge model
-   ([docs/judging.md](docs/judging.md)).
-3. **Keeps everything.** Documents, every verdict, and what each run cost,
-   in SQLite ([docs/database.md](docs/database.md)).
-4. **Stays inside a budget.** It has its own OpenRouter key with a spending
-   limit, reads what it has spent, and stops before the limit
-   ([docs/judging.md](docs/judging.md#budget)).
+   Each new document is screened by L1 and L2, at no cost.
+2. **Labels.** Each night Claude Opus 5.5 and Claude Fable 5.1, run by Claude
+   Code with no tools on the Claude subscription, label every document
+   attack, borderline or benign. Where they disagree, a person decides
+   ([docs/labelling.md](docs/labelling.md)). The labels are the answer key.
+3. **Evaluates.** The image is built on Trentina's, so the shipped
+   deterministic layer, classifier and judge with its prompt pack, under each
+   judge model, are run over the labelled attacks and a benign sample. That
+   happens again only when a Trentina release changes the pipeline, and the
+   base image follows Trentina's releases on its own
+   ([docs/evaluating.md](docs/evaluating.md)).
+4. **Keeps everything, inside a budget.** Documents, labels, verdicts and
+   costs go in SQLite ([docs/database.md](docs/database.md)). Evaluation has
+   its own OpenRouter key with a spending limit, and stops before the limit.
 
 ## Quick Start
 
@@ -29,15 +34,17 @@ podman run --rm \
   quay.io/crunchtools/data-collector:latest run
 ```
 
-`deploy/` has the systemd service and timer that run this daily, and
-`deploy/collector.env.example` lists every setting.
+`deploy/` has the systemd units and timers that run collection daily and
+labelling and evaluation nightly, and the two env examples list every
+setting. `report` prints the judges' scores against the labels.
 
 ## Documentation
 
 | Page | What it covers |
 |------|----------------|
 | [docs/collecting.md](docs/collecting.md) | What is sampled, what is kept of a document, and what is left out |
-| [docs/judging.md](docs/judging.md) | How a verdict is reached, votes, cost and the budget floor |
+| [docs/labelling.md](docs/labelling.md) | The labels, how they are asked for, and how disagreements reach a person |
+| [docs/evaluating.md](docs/evaluating.md) | The evaluation set, the pipeline fingerprint, votes, cost and the budget floor |
 | [docs/database.md](docs/database.md) | Tables, and queries worth knowing |
 | [docs/deploying.md](docs/deploying.md) | Running it on a host |
 

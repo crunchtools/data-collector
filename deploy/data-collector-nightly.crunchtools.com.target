@@ -1,0 +1,5 @@
+[Unit]
+Description=data-collector: label, then evaluate
+# Wants, not Requires: evaluation still runs when labelling fails, on the
+# labels there are. The evaluate unit orders itself after the label unit.
+Wants=data-collector-label.crunchtools.com.service data-collector-evaluate.crunchtools.com.service

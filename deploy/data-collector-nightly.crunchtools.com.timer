@@ -1,0 +1,13 @@
+[Unit]
+Description=Nightly data-collector labelling and evaluation
+
+[Timer]
+# At night: labelling shares the Claude subscription's five-hour window with
+# whoever else uses it in the day.
+OnCalendar=*-*-* 01:30:00
+Persistent=true
+RandomizedDelaySec=300
+Unit=data-collector-nightly.crunchtools.com.target
+
+[Install]
+WantedBy=timers.target

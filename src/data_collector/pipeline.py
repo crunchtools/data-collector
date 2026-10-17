@@ -8,11 +8,15 @@ verdict is what a Trentina gateway of this version would have decided.
 
 Which judge model answers is Trentina's own configuration, read from the
 environment (``JUDGE_ENVIRONMENT`` names the variables). It is read once per
-process, which is why each model's pass runs in a process of its own.
+process, which is why each model's pass runs in a process of its own, and a
+screen (``screen``: L1 and L2, no judge) in a process with no key at all.
+``fingerprint`` names the pipeline a verdict was reached under.
 """
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -21,7 +25,7 @@ from trentina.config import get_config
 from trentina.defense import defend
 from trentina.egress import open_guarded
 from trentina.errors import TrentinaError
-from trentina.perimeter_db import PERIMETER_VERSION
+from trentina.perimeter_db import PERIMETER_VERSION, perimeter_stamp
 from trentina.quarantine.packs import GENERIC_ID, pack_for
 
 from .feed import FeedError
@@ -59,6 +63,38 @@ def judge_problem(model: str) -> str | None:
     return None
 
 
+# What decides a verdict, under Trentina's package directory: defend() and
+# everything it reads. preprocess/ is not here: defend() imports it for a
+# type only, and it changes with the gateway's minifier, which no verdict
+# here goes through. When in doubt a path belongs here: a needless
+# evaluation costs a few dollars, a missed one scores a pipeline that is not
+# the one that shipped.
+FINGERPRINTED = ("defense.py", "config.py", "jsonwalk.py", "l1", "quarantine", "unpack")
+
+
+def fingerprint() -> str:
+    """The defense pipeline, as one hash: Trentina's perimeter stamp (L1's
+    version and the L2 model, revision, threshold and window) and the source
+    of every module a verdict depends on. Two Trentina releases with the same
+    fingerprint judge alike, so the second owes no evaluation."""
+    package = Path(trentina.__file__).parent
+    digest = hashlib.sha256(perimeter_stamp().encode())
+    for name in FINGERPRINTED:
+        path = package / name
+        files = [path] if path.is_file() else sorted(path.rglob("*"))
+        for file in files:
+            if file.is_file() and "__pycache__" not in file.parts:
+                digest.update(file.relative_to(package).as_posix().encode() + b"\0")
+                digest.update(file.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+def screen_problem() -> str | None:
+    """Why this process must not screen, or None when it may: a screen is L1
+    and L2 alone, and a process that could reach a judge would pay for one."""
+    return "Trentina has a judge configured" if get_config().has_llm else None
+
+
 def versions() -> tuple[str, str]:
     """Trentina's version and its perimeter's: what a verdict was reached under."""
     return str(trentina.__version__), str(PERIMETER_VERSION)
@@ -80,6 +116,11 @@ async def fetch(url: str) -> bytes:
         # The class, never the message: a message can carry the URL.
         raise FeedError(type(exc).__name__) from exc
     return bytes(body)
+
+
+async def screen(text: str, source: str) -> dict[str, Any]:
+    """What L1 and L2 make of ``text``, with no judge asked (``screen_problem``)."""
+    return await judge(text, source)
 
 
 async def judge(text: str, source: str) -> dict[str, Any]:
