@@ -110,7 +110,7 @@ jobs:
       # a read-only root, and the labelling prompt and schema are packaged.
       - name: Check labelling
         run: |
-          docker run --rm --read-only --tmpfs /tmp:uid=65532 \
+          docker run --rm --read-only --tmpfs /tmp \
             -e HOME=/tmp/home data-collector:test check-label
 
       - name: Build and push
