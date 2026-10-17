@@ -17,7 +17,7 @@ ExecStart=/usr/bin/podman run \
     --rm \
     --name data-collector-label.crunchtools.com \
     --memory=2g --memory-swap=2g \
-    --read-only --tmpfs /tmp:uid=65532,mode=0700 \
+    --read-only --tmpfs /tmp \
     --cap-drop=all --security-opt=no-new-privileges \
     -e HOME=/tmp/home \
     --env-file /srv/data-collector.crunchtools.com/config/labeller.env \
