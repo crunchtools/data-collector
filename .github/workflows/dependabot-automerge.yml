@@ -16,3 +16,25 @@ jobs:
   automerge:
     name: Dependabot
     uses: crunchtools/constitution/.github/workflows/dependabot-automerge.yml@v1.24.0
+
+  # The fleet's job leaves the docker ecosystem to a human. This repo's base
+  # image is Trentina, and following its releases is the point: a non-major
+  # bump of it is queued too. The "Image gates" ruleset makes the merge wait
+  # for `test` and for `check` inside the built image, which proves every
+  # judge still has a prompt pack under the new base.
+  trentina:
+    name: Dependabot (Trentina base)
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v3
+      - name: Queue a non-major Trentina base bump
+        if: >-
+          steps.meta.outputs.package-ecosystem == 'docker' &&
+          steps.meta.outputs.dependency-names == 'crunchtools/trentina' &&
+          steps.meta.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR"
