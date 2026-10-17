@@ -1,7 +1,7 @@
-"""A run, end to end, with the network and Trentina replaced.
+"""Collection and evaluation, end to end, with the network and Trentina replaced.
 
 What is paid for, what is owed again, and what a run says about itself are
-decisions the two-week study leans on, so each is held here.
+decisions the study leans on, so each is held here.
 """
 
 from __future__ import annotations
@@ -18,7 +18,16 @@ import pytest
 from data_collector import __main__ as cli
 from data_collector.__main__ import judge_environment
 from data_collector.budget import KEY_URL, Budget, budget
-from data_collector.collect import GIVE_UP_AFTER, Judge, Settings, import_run, judge_pass, run
+from data_collector.collect import (
+    GIVE_UP_AFTER,
+    Judge,
+    Settings,
+    evaluate,
+    import_run,
+    judge_pass,
+    run,
+    screen_pass,
+)
 from data_collector.feed import Document
 from data_collector.store import MAX_UNANSWERED, UNAVAILABLE, Store
 
@@ -47,6 +56,7 @@ class Rig:
     down: set[str] = field(default_factory=set)
     unanswerable: set[str] = field(default_factory=set)
     now: float = 1000.0
+    pipeline: str = "p1"
 
     async def documents(self, _limit: int) -> list[Document]:
         return self.found
@@ -78,16 +88,44 @@ class Rig:
     def rows(self, query: str) -> list[tuple[Any, ...]]:
         return [tuple(row) for row in self.store.db.execute(query)]
 
-    async def run(self) -> str:
+    async def screen_for(self, _most: int) -> bool:
+        return True
+
+    async def collect(self) -> str:
         return await run(
             self.store,
             self,
             SETTINGS,
             versions=("1.0.1", "11"),
-            spent=self.spent,
+            pipeline=self.pipeline,
+            screen_for=self.screen_for,
+            clock=self.clock,
+        )
+
+    def enrol(self) -> None:
+        """Every document into the evaluation set, as labelling would put an
+        attack or a benign sample there."""
+        self.store.db.execute(
+            "INSERT OR IGNORE INTO eval_members SELECT id, 'attack', 0 FROM documents"
+        )
+        self.store.db.commit()
+
+    async def evaluate(self, settings: Settings = SETTINGS, **wired: Any) -> str:
+        return await evaluate(
+            self.store,
+            settings,
+            versions=wired.get("versions", ("1.0.1", "11")),
+            pipeline=wired.get("pipeline", self.pipeline),
+            spent=wired.get("spent", self.spent),
             pass_for=self.pass_for,
             clock=self.clock,
         )
+
+    async def run(self) -> str:
+        """A day: collect, enrol, evaluate. Returns the evaluation's outcome."""
+        await self.collect()
+        self.enrol()
+        return await self.evaluate()
 
 
 @pytest.fixture
@@ -105,7 +143,10 @@ async def test_a_run_stores_every_document_and_every_judges_three_answers(rig: R
         ("v/b", "clean", 3),
         ("v/b", "flagged", 3),
     ]
-    assert rig.rows("SELECT collected, new_documents, outcome FROM runs") == [(2, 2, "ok")]
+    assert rig.rows("SELECT kind, collected, new_documents, outcome FROM runs") == [
+        ("collect", 2, 2, "ok"),
+        ("evaluate", None, None, "ok"),
+    ]
     assert rig.rows("SELECT model, asks, answered FROM run_models ORDER BY 1") == [
         ("v/a", 6, 6),
         ("v/b", 6, 6),
@@ -119,14 +160,20 @@ async def test_what_was_judged_yesterday_is_not_paid_for_again(rig: Rig) -> None
     assert await rig.run() == "ok"
     assert len(rig.asks) - first == 6  # the one new document, three votes, two judges
     assert rig.rows("SELECT times_seen FROM documents ORDER BY times_seen DESC LIMIT 1") == [(2,)]
-    assert rig.rows("SELECT new_documents FROM runs ORDER BY id") == [(2,), (1,)]
+    assert rig.rows("SELECT new_documents FROM runs WHERE kind = 'collect' ORDER BY id") == [
+        (2,),
+        (1,),
+    ]
 
 
 async def test_a_run_records_what_each_judge_cost(rig: Rig) -> None:
     await rig.run()
     costs = rig.rows("SELECT ROUND(cost_usd, 2) FROM run_models ORDER BY model")
     assert costs == [(0.06,), (0.06,)]
-    assert rig.rows("SELECT ROUND(cost_usd, 2) FROM runs") == [(0.12,)]
+    assert rig.rows("SELECT kind, ROUND(cost_usd, 2) FROM runs") == [
+        ("collect", None),
+        ("evaluate", 0.12),
+    ]
 
 
 async def test_a_judge_that_did_not_answer_is_owed_again_on_the_next_run(rig: Rig) -> None:
@@ -196,15 +243,9 @@ async def test_how_many_documents_a_balance_pays_for(
     async def spent() -> Budget:
         return Budget(rig.used, left)
 
-    outcome = await run(
-        rig.store,
-        rig,
-        SETTINGS,
-        versions=("1.0.1", "11"),
-        spent=spent,
-        pass_for=rig.pass_for,
-        clock=rig.clock,
-    )
+    await rig.collect()
+    rig.enrol()
+    outcome = await rig.evaluate(spent=spent)
     assert len(rig.asks) - before == 2 * documents * 3
     assert outcome == ("ok" if documents == 10 else "out of budget")
 
@@ -219,22 +260,16 @@ async def test_a_run_reports_the_worst_thing_that_happened_to_any_judge(rig: Rig
     async def run_on(*texts: str) -> str:
         rig.found = [Document("post", "https://feed.example/9", text) for text in texts]
         lefts[:] = [SETTINGS.floor]  # the first judge, v/a, cannot be paid for
-        return await run(
-            rig.store,
-            rig,
-            SETTINGS,
-            versions=("1.0.1", "11"),
-            spent=spent,
-            pass_for=rig.pass_for,
-            clock=rig.clock,
-        )
+        await rig.collect()
+        rig.enrol()
+        return await rig.evaluate(spent=spent)
 
     # One judge unpaid outranks a few asks the other left unanswered.
     rig.unanswerable = {"A new post, long enough."}
     assert await run_on("A new post, long enough.", "A second, long enough.") == "out of budget"
-    assert rig.rows("SELECT model, asks, answered FROM run_models WHERE run_id = 2") == [
-        ("v/b", 6, 3)
-    ]
+    latest = "SELECT model, asks, answered FROM run_models WHERE run_id = "
+    latest += "(SELECT MAX(id) FROM runs WHERE kind = 'evaluate')"
+    assert rig.rows(latest) == [("v/b", 6, 3)]
     # And a judge that gave up outranks a judge unpaid.
     rig.down = {"v/b"}
     assert await run_on("Another post, long enough.") == "judge failed"
@@ -244,12 +279,23 @@ async def test_a_run_reports_the_worst_thing_that_happened_to_any_judge(rig: Rig
 JUDGE_COMMAND = ("judge", "--run", "4", "--max-documents", "7")
 
 
-async def test_the_run_tells_a_judges_process_how_many_documents(
+def _trentina(monkeypatch: pytest.MonkeyPatch) -> None:
+    trentina = types.SimpleNamespace(
+        fetch=None,
+        versions=lambda: ("1.0.1", "11"),
+        fingerprint=lambda: "p1",
+        JUDGE_ENVIRONMENT={"provider": "P", "model": "M", "effort": "E", "patience": "T"},
+    )
+    monkeypatch.setitem(sys.modules, "data_collector.pipeline", trentina)
+
+
+async def test_an_evaluation_tells_a_judges_process_how_many_documents(
     rig: Rig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     started: list[tuple[str, ...]] = []
 
     async def one_pass(*_given: Any, **wired: Any) -> str:
+        assert wired["pipeline"] == "p1"
         await wired["pass_for"](Judge("v/a"), 4, 7)
         return "ok"
 
@@ -257,13 +303,54 @@ async def test_the_run_tells_a_judges_process_how_many_documents(
         started.append(command)
         return True
 
-    trentina = types.SimpleNamespace(fetch=None, versions=lambda: ("1.0.1", "11"))
-    monkeypatch.setitem(sys.modules, "data_collector.pipeline", trentina)
-    monkeypatch.setattr(cli, "run", one_pass)
+    _trentina(monkeypatch)
+    monkeypatch.setattr(cli, "evaluate", one_pass)
     monkeypatch.setattr(cli, "_model_process", process)
     monkeypatch.setenv("OPENROUTER_API_KEY", "k")
-    assert await cli._run(rig.store) == 0
+    assert await cli._evaluate(rig.store) == 0
     assert started == [JUDGE_COMMAND]
+
+
+async def test_a_collection_screens_in_a_process_that_holds_no_key(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A screen is L1 and L2 alone. Its process is given no key and none of
+    Trentina's judge settings, so there is no judge for it to pay."""
+    given: list[tuple[dict[str, str], tuple[str, ...]]] = []
+
+    async def collecting(*_given: Any, **wired: Any) -> str:
+        await wired["screen_for"](600)
+        return "ok"
+
+    async def process(env: dict[str, str], *command: str) -> bool:
+        given.append((env, command))
+        return True
+
+    _trentina(monkeypatch)
+    monkeypatch.setattr(cli, "run", collecting)
+    monkeypatch.setattr(cli, "_process", process)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setenv("M", "v/a")
+    assert await cli._run(rig.store) == 0
+    [(env, command)] = given
+    assert command == ("screen", "--max-documents", "600")
+    assert "OPENROUTER_API_KEY" not in env
+    assert "M" not in env
+
+
+async def test_a_screen_records_l1_and_l2_once_per_pipeline(rig: Rig) -> None:
+    await rig.collect()
+    seen: list[str] = []
+
+    async def screen(text: str, _url: str) -> dict[str, Any]:
+        seen.append(text)
+        flagged = "system prompt" in text
+        return {"flagged_by": "L2" if flagged else None, "l1_risk": "low", "l2_label": "x"}
+
+    assert await screen_pass(rig.store, "p1", screen, 10, 2) == 2
+    assert await screen_pass(rig.store, "p1", screen, 10, 2) == 0
+    assert await screen_pass(rig.store, "p2", screen, 10, 2) == 2
+    assert rig.store.screened_flagged() == {ATTACK.id}
 
 
 def test_a_judges_process_reads_how_many_documents(
@@ -288,19 +375,31 @@ async def test_with_too_little_left_on_the_key_no_judge_is_asked(rig: Rig) -> No
     assert rig.rows("SELECT COUNT(*) FROM documents") == [(2,)]  # collecting costs nothing
 
 
-async def test_a_new_trentina_version_judges_everything_again(rig: Rig) -> None:
+async def test_a_trentina_release_with_the_same_pipeline_owes_nothing(rig: Rig) -> None:
     await rig.run()
     before = len(rig.asks)
-    await run(
-        rig.store,
-        rig,
-        SETTINGS,
-        versions=("1.1.0", "12"),
-        spent=rig.spent,
-        pass_for=rig.pass_for,
-        clock=rig.clock,
-    )
+    assert await rig.evaluate(versions=("1.1.0", "12")) == "ok"
+    assert len(rig.asks) == before
+    assert await rig.evaluate(versions=("1.2.0", "12"), pipeline="p2") == "ok"
     assert len(rig.asks) - before == 12
+
+
+async def test_an_evaluation_judges_the_evaluation_set_only(rig: Rig) -> None:
+    await rig.collect()
+    rig.store.db.execute("INSERT INTO eval_members VALUES (?, 'attack', 0)", (ATTACK.id,))
+    assert await rig.evaluate() == "ok"
+    assert {text for _, text in rig.asks} == {ATTACK.text}
+    assert len(rig.asks) == 6
+
+
+async def test_a_judge_is_its_model_and_its_effort(rig: Rig) -> None:
+    await rig.collect()
+    rig.enrol()
+    thinking = Settings(
+        limit=10, votes=3, concurrency=4, floor=0.5, judges=(Judge("v/a", "minimal"),)
+    )
+    await rig.evaluate(thinking)
+    assert rig.rows("SELECT DISTINCT model FROM run_models") == [("v/a:minimal",)]
 
 
 def test_an_earlier_github_run_is_loaded_as_what_it_was(rig: Rig, tmp_path: Path) -> None:
@@ -376,34 +475,35 @@ async def test_a_run_that_fails_says_so_and_keeps_what_it_collected(rig: Rig) ->
             raise httpx.ConnectError("down")
         return Budget(0.0, 10.0)
 
+    await rig.collect()
+    rig.enrol()
     with pytest.raises(httpx.ConnectError):
-        await run(
-            rig.store,
-            rig,
-            SETTINGS,
-            versions=("1.0.1", "11"),
-            spent=budget_goes_away,
-            pass_for=rig.pass_for,
-            clock=rig.clock,
-        )
-    assert rig.rows("SELECT outcome, collected, new_documents FROM runs") == [
-        ("error: ConnectError", 2, 2)
+        await rig.evaluate(spent=budget_goes_away)
+    assert rig.rows("SELECT kind, outcome, collected FROM runs") == [
+        ("collect", "ok", 2),
+        ("evaluate", "error: ConnectError", None),
     ]
     assert rig.rows("SELECT COUNT(*) FROM runs WHERE finished_at IS NULL") == [(0,)]
 
 
-async def test_a_run_with_no_judge_configured_is_not_called_ok(rig: Rig) -> None:
+async def test_an_evaluation_with_no_judge_configured_is_not_called_ok(rig: Rig) -> None:
     quiet = Settings(limit=10, votes=3, concurrency=4, floor=0.5, judges=())
-    outcome = await run(
-        rig.store,
-        rig,
-        quiet,
-        versions=("1.0.1", "11"),
-        spent=rig.spent,
-        pass_for=rig.pass_for,
-        clock=rig.clock,
-    )
-    assert outcome == "incomplete"
+    await rig.collect()
+    assert await rig.evaluate(quiet) == "incomplete"
+
+
+async def test_collecting_judges_nothing(rig: Rig) -> None:
+    assert await rig.collect() == "ok"
+    assert rig.asks == []
+
+
+async def test_a_screen_that_did_not_finish_leaves_the_collection_incomplete(rig: Rig) -> None:
+    async def unfinished(_most: int) -> bool:
+        return False
+
+    rig.screen_for = unfinished  # type: ignore[method-assign]
+    assert await rig.collect() == "incomplete"
+    assert rig.rows("SELECT COUNT(*) FROM documents") == [(2,)]
 
 
 @pytest.mark.parametrize(

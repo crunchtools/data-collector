@@ -1,4 +1,4 @@
-"""Collect documents from hostile feeds and record what Trentina's defense
-pipeline makes of each one, in SQLite."""
+"""Collect documents from hostile feeds, label them, and score what Trentina's
+defense pipeline makes of the labelled ones, in SQLite."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

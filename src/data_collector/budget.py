@@ -1,9 +1,9 @@
 """What the collector's own OpenRouter key has spent, and has left.
 
-The key is the collector's alone and carries a spending limit, so that a
-collection run can never exhaust the key some other service depends on.
-Reading the key's usage before and after a judge model's pass is what turns
-"about two dollars a day" into a number in the database.
+The key is the collector's alone and carries a spending limit, so that an
+evaluation can never exhaust the key some other service depends on. Reading
+the key's usage before and after a judge model's pass is what puts what each
+judge cost in the database, rather than an estimate.
 """
 
 from __future__ import annotations

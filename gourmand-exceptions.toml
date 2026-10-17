@@ -11,10 +11,16 @@ justification = "deploy/ holds the systemd units and the env example as they are
 check = "hidden_env_config"
 path = "src/data_collector/__main__.py"
 classification = "by_design"
-justification = "The container's only configuration surface is its environment (constitution XIV: config is bind-mounted from the host, here as an env file). Every variable read is listed in this module's docstring, in deploy/collector.env.example and in docs/judging.md; none is hidden. QUARANTINE_MODEL is Trentina's own setting, which the parent process sets for each judge model's child."
+justification = "The container's only configuration surface is its environment (constitution XIV: config is bind-mounted from the host, here as an env file). Every variable read is listed in this module's docstring, in deploy/collector.env.example and in docs/evaluating.md; none is hidden. QUARANTINE_MODEL is Trentina's own setting, which the parent process sets for each judge model's child."
 
 [[exceptions]]
 check = "manifest_lint_suppression"
 path = "pyproject.toml"
 classification = "by_design"
 justification = "One entry: S101 (use of assert) for tests/ only. pytest tests are assert statements; the rule stays on for src/, where an assert would be a real finding."
+
+[[exceptions]]
+check = "hidden_env_config"
+path = "src/data_collector/label.py"
+classification = "by_design"
+justification = "The labeller image's only configuration surface is its environment (constitution XIV), as for the collector. Every variable read is listed in this module's docstring and in deploy/labeller.env.example; none is hidden."

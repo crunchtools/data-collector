@@ -19,7 +19,10 @@ that is not public, on every hop of a redirect.
 For each document: its text, the API URL it was read from, whether it was a
 post or a comment, and an id that is the first 16 hex digits of the SHA-256
 of the text. The same text collected twice is one document: `times_seen`
-goes up and it is not judged, or paid for, a second time.
+goes up and it is not screened, labelled or judged a second time.
+
+Each new document is screened: L1 and L2 alone, with no judge, at no cost
+([evaluating.md](evaluating.md#screens)).
 
 Not kept: the author's name, handle, profile or any other account data.
 Text shorter than 40 characters is skipped as a reaction, not a document.
@@ -27,7 +30,8 @@ Text shorter than 40 characters is skipped as a reaction, not a document.
 ## What this is not
 
 A document's text is hostile until shown otherwise. It is stored in the
-database and nowhere else: never logged, never printed. It is not a test
+database and nowhere else: never logged, and never printed except to a
+person at a terminal by `review` ([labelling.md](labelling.md#disagreements)). It is not a test
 fixture either; an attack found here enters a test corpus only rewritten by
 hand, with every third party's name and host replaced.
 

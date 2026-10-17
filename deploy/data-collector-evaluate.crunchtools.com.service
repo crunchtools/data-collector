@@ -1,0 +1,23 @@
+[Unit]
+Description=data-collector: judge the evaluation set under the current Trentina pipeline
+Wants=network-online.target
+After=network-online.target data-collector-label.crunchtools.com.service
+
+[Service]
+Type=oneshot
+# A new pipeline asks about ~250 documents, three times, of four judges:
+# 3,000 calls, about half an hour at six at a time.
+TimeoutStartSec=10800
+ExecStartPre=-/usr/bin/podman rm -f data-collector-evaluate.crunchtools.com
+ExecStartPre=/usr/bin/podman pull -q quay.io/crunchtools/data-collector:latest
+ExecStart=/usr/bin/podman run \
+    --rm \
+    --name data-collector-evaluate.crunchtools.com \
+    --memory=2g --memory-swap=2g \
+    --read-only --tmpfs /tmp \
+    --cap-drop=all --security-opt=no-new-privileges \
+    --env-file /srv/data-collector.crunchtools.com/config/collector.env \
+    -v /srv/data-collector.crunchtools.com/data:/data:Z \
+    quay.io/crunchtools/data-collector:latest evaluate
+# An evaluation killed by the timeout must not go on spending.
+ExecStopPost=-/usr/bin/podman rm -f data-collector-evaluate.crunchtools.com
