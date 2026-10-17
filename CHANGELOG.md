@@ -35,6 +35,7 @@ All notable changes to this project are documented here. The format follows
   `parent-image-updated` event.
 - A non-major bump of the Trentina base is merged on its own once `test`
   and the image's `check` pass, and Dependabot looks for one daily.
+- Built on Trentina 1.10.1 (was 1.0.1).
 
 ## [0.2.0] - 2026-10-08
 
