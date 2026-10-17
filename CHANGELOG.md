@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- No systemd timers: Hermes starts the collect unit and the nightly target on
+  their schedules, as it does every crunchtools host job.
+
 ## [0.3.0] - 2026-10-17
 
 ### Added

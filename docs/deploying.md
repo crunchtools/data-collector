@@ -21,12 +21,15 @@ Copy `deploy/labeller.env.example` to `labeller.env`, and have the Claude
 subscription's owner run `claude setup-token` and paste what it prints as
 `CLAUDE_CODE_OAUTH_TOKEN`.
 
-Three units and two timers:
+Three units and a target. None has a timer: crunchtools schedules live in
+Hermes, whose jobs start a unit through Trentina's systemd tools and wake
+Kagetora when a run fails (`/srv/kagetora.crunchtools.com/config/hermes-scripts/`,
+`host_units.py` lists every unit Hermes starts).
 
-| Unit | When | Does |
+| Unit | Hermes starts it | Does |
 |---|---|---|
-| `data-collector.crunchtools.com.service` | `.timer`, 06:17 | collects the feed and screens what is new |
-| `data-collector-nightly.crunchtools.com.target` | `.timer`, 01:30 | starts the two below |
+| `data-collector.crunchtools.com.service` | daily, early morning | collects the feed and screens what is new |
+| `data-collector-nightly.crunchtools.com.target` | nightly, 01:30 | starts the two below |
 | `data-collector-label.crunchtools.com.service` | the target | labels |
 | `data-collector-evaluate.crunchtools.com.service` | the target, after labelling | judges the evaluation set |
 
@@ -43,11 +46,14 @@ unit changes:
 
 ```bash
 cd /srv/data-collector.crunchtools.com/config
-cp data-collector*.service data-collector*.timer data-collector*.target /etc/systemd/system/
+cp data-collector*.service data-collector*.target /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now data-collector.crunchtools.com.timer data-collector-nightly.crunchtools.com.timer
 systemctl start data-collector-nightly.crunchtools.com.target   # a first night, by hand
 ```
+
+Then give Hermes a job for each unit it does not start yet: a
+`start-<unit>.py` beside the others, and the unit in `host_units.MANAGED`, so
+the watch job reports a failed run.
 
 The services log to the journal: outcomes and counts, never a document. A
 unit exits non-zero when a run is `out of budget`, a judge or the labeller
@@ -82,4 +88,4 @@ Import a run once: a second import records its verdicts a second time.
 
 A run that has not happened is visible as a database file that has stopped
 changing. Watch its age with a Nagios file-age check; the collector adds no
-timer or check of its own.
+schedule or check of its own.

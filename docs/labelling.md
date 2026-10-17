@@ -45,8 +45,8 @@ An ask that fails outright (the token is refused, the subscription's limit
 is reached) records nothing. Two in a row end that labeller's pass, and what
 it did not reach is asked the next night.
 
-Labelling runs nightly at 01:30, before the evaluation, and takes on
-`COLLECTOR_LABEL_LIMIT` documents per labeller per run (800). The 3,781
+Labelling runs nightly, started by Hermes at 01:30 before the evaluation,
+and takes on `COLLECTOR_LABEL_LIMIT` documents per labeller per run (800). The 3,781
 documents collected before labelling existed, with about 290 new ones a
 day, are worked through in about eight nights.
 

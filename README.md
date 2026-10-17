@@ -34,9 +34,9 @@ podman run --rm \
   quay.io/crunchtools/data-collector:latest run
 ```
 
-`deploy/` has the systemd units and timers that run collection daily and
-labelling and evaluation nightly, and the two env examples list every
-setting. `report` prints the judges' scores against the labels.
+`deploy/` has the systemd units that collect daily and label and evaluate
+nightly, started on their schedules by Hermes, and the two env examples list
+every setting. `report` prints the judges' scores against the labels.
 
 ## Documentation
 
