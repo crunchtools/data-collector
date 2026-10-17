@@ -42,12 +42,12 @@ and asked again the next run. After three runs of that the document is
 
 An ask that fails outright (the token is refused, the subscription's limit
 is reached) records nothing. Two in a row end that labeller's pass, and what
-it did not reach is asked the next night.
+it did not reach is asked the next run.
 
-Labelling runs nightly, started by Hermes at 01:30 before the evaluation,
-and takes on `COLLECTOR_LABEL_LIMIT` documents per labeller per run (800). The 3,781
-documents collected before labelling existed, with about 290 new ones a
-day, are worked through in about eight nights.
+Labelling runs once a collection ends, started by hand at night with the
+evaluation, and takes on `COLLECTOR_LABEL_LIMIT` documents per labeller per
+run (800). The first collection's roughly 5,800 documents take about eight
+runs.
 
 The token is `CLAUDE_CODE_OAUTH_TOKEN`, made with `claude setup-token`. It
 can only be used for inference, which is all the labeller needs. It is the

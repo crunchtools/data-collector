@@ -8,18 +8,22 @@ It exists to answer two questions with real traffic instead of written test
 cases: how often does an attack actually turn up, and does the pipeline catch
 it under each judge model it supports?
 
-1. **Collects.** Once a day it reads a sample of a feed. Today that is
+Each step runs for a collection: a set period of daily collecting (the
+first ran 2026-10-08 to 10-22), then labelling and evaluation run once, by
+hand. The units stay in place for the next collection.
+
+1. **Collects.** Once a day, for the collection, it reads a sample of a feed. Today that is
    Moltbook's public posts and comments ([docs/collecting.md](docs/collecting.md)).
    Each new document is screened by L1 and L2, at no cost.
-2. **Labels.** Each night Claude Opus 5.5 and Claude Fable 5.1, run by Claude
+2. **Labels.** Claude Opus 5.5 and Claude Fable 5.1, run by Claude
    Code with no tools on the Claude subscription, label every document
    attack, borderline or benign. Where they disagree, a person decides
    ([docs/labelling.md](docs/labelling.md)). The labels are the answer key.
 3. **Evaluates.** The image is built on Trentina's, so the shipped
    deterministic layer, classifier and judge with its prompt pack, under each
-   judge model, are run over the labelled attacks and a benign sample. That
-   happens again only when a Trentina release changes the pipeline, and the
-   base image follows Trentina's releases on its own
+   judge model, are run over the labelled attacks and a benign sample. A
+   later run owes verdicts again only if a Trentina release has changed the
+   pipeline, and the base image follows Trentina's releases on its own
    ([docs/evaluating.md](docs/evaluating.md)).
 4. **Keeps everything, inside a budget.** Documents, labels, verdicts and
    costs go in SQLite ([docs/database.md](docs/database.md)). Evaluation has
@@ -34,9 +38,8 @@ podman run --rm \
   quay.io/crunchtools/data-collector:latest run
 ```
 
-`deploy/` has the systemd units that collect daily and label and evaluate
-nightly, started on their schedules by Hermes, and the two env examples list
-every setting. `report` prints the judges' scores against the labels.
+`deploy/` has the systemd units that collect, label and evaluate, and the
+two env examples list every setting. `report` prints the judges' scores against the labels.
 
 ## Documentation
 

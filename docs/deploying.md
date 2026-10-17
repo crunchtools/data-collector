@@ -28,14 +28,22 @@ Kagetora when a run fails (`/srv/kagetora.crunchtools.com/config/hermes-scripts/
 
 | Unit | Hermes starts it | Does |
 |---|---|---|
-| `data-collector.crunchtools.com.service` | daily, early morning | collects the feed and screens what is new |
-| `data-collector-nightly.crunchtools.com.target` | nightly, 01:30 | starts the two below |
+| `data-collector.crunchtools.com.service` | daily, for a collection | collects the feed and screens what is new |
+| `data-collector-nightly.crunchtools.com.target` | by hand, after a collection | starts the two below |
 | `data-collector-label.crunchtools.com.service` | the target | labels |
 | `data-collector-evaluate.crunchtools.com.service` | the target, after labelling | judges the evaluation set |
 
 The target `Wants` both, so an evaluation still runs on the labels there are
-when labelling fails. Labelling runs at night because it shares the Claude
-subscription's five-hour window with whoever else uses it in the day.
+when labelling fails. Start it at night and again on later nights until
+labelling is done: it shares the Claude subscription's five-hour window with
+whoever else uses it in the day, and each run resumes where the last
+stopped.
+
+A collection is a period of daily runs. Its Hermes job is created with a
+repeat count, the number of days, and removes itself after the last run. The
+first collection's job is kept in
+`/srv/data-collector.crunchtools.com/config/hermes-job.json`; recreate it
+from there, with `hermes cron create` in Kagetora's container, for the next.
 
 Copy every file in `deploy/` except the env examples into
 `/srv/data-collector.crunchtools.com/config/` and commit them in `/srv`
@@ -48,12 +56,12 @@ unit changes:
 cd /srv/data-collector.crunchtools.com/config
 cp data-collector*.service data-collector*.target /etc/systemd/system/
 systemctl daemon-reload
-systemctl start data-collector-nightly.crunchtools.com.target   # a first night, by hand
+systemctl start data-collector-nightly.crunchtools.com.target   # after a collection
 ```
 
-Then give Hermes a job for each unit it does not start yet: a
-`start-<unit>.py` beside the others, and the unit in `host_units.MANAGED`, so
-the watch job reports a failed run.
+Hermes starts only the collect unit: `start-data-collector.crunchtools.com.py`
+beside the others, and the unit in `host_units.MANAGED`, so the watch job
+reports a failed run.
 
 The services log to the journal: outcomes and counts, never a document. A
 unit exits non-zero when a run is `out of budget`, a judge or the labeller
@@ -67,7 +75,7 @@ a new Trentina image daily, and `dependabot-automerge.yml` merges a
 non-major bump once the "Image gates" ruleset's checks pass: `test`, and
 `build-and-push-quay`, which runs `check` inside the built image and so
 proves every judge still has a prompt pack. A major bump waits for a person.
-The merge pushes `:latest`, which the next night's evaluation pulls.
+The merge pushes `:latest`, which the next evaluation pulls.
 
 Claude Code is pinned in `Containerfile` by version and SHA-256, to the
 version Josui runs, and is bumped by hand.

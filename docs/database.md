@@ -37,7 +37,7 @@ columns are NULL.
 
 ## Queries
 
-What each night's evaluation cost, by model:
+What each evaluation cost, by model:
 
 ```sql
 SELECT date(r.started_at, 'unixepoch') AS day, m.model, m.asks, m.answered,

@@ -1,6 +1,6 @@
-"""Command line: ``run``, ``label`` and ``evaluate`` daily, ``review`` and
-``report`` by hand, ``import`` earlier results, ``check`` and ``check-label``
-the image.
+"""Command line: ``run`` daily for a collection, ``label`` and ``evaluate``
+after it, ``review`` and ``report`` by hand, ``import`` earlier results,
+``check`` and ``check-label`` the image.
 
 Settings come from the environment, as the container is given them. Those
 below are every collector command's (``deploy/collector.env.example`` lists
