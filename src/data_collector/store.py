@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Iterable
     from pathlib import Path
 
     from .feed import Document
@@ -130,8 +130,6 @@ MIGRATIONS = (
     """,
 )
 
-T = TypeVar("T")
-
 UNAVAILABLE = "unavailable"
 """The ``l3_verdict`` of an ask the judge did not answer. It is a row too:
 the ask was made, and it is owed again. ``flagged`` and ``clean`` are answers."""
@@ -191,7 +189,7 @@ LIMIT :most
 # Documents a labeller has not labelled under this prompt, and has not failed
 # on in MAX_UNANSWERED runs. Newest first.
 _UNLABELLED = """
-SELECT d.id, d.url, d.text,
+SELECT d.id, d.text,
        COUNT(DISTINCT CASE WHEN l.label = 'failed' THEN l.run_id END) AS failures
 FROM documents d
 LEFT JOIN labels l
@@ -256,14 +254,6 @@ class Final:
     by: str
 
 
-def _pending(row: sqlite3.Row) -> Pending:
-    return Pending(row["id"], row["url"], row["text"], row["owed"])
-
-
-def _unlabelled(row: sqlite3.Row) -> Unlabelled:
-    return Unlabelled(row["id"], row["text"], row["failures"])
-
-
 class Store:
     """The collector's database at ``path``, created on first use and
     migrated to the latest schema."""
@@ -275,13 +265,6 @@ class Store:
         version = int(self.db.execute("PRAGMA user_version").fetchone()[0])
         for script in MIGRATIONS[version:]:
             self.db.executescript(script)
-
-    def _select(
-        self, query: str, asked: dict[str, Any], make: Callable[[sqlite3.Row], T]
-    ) -> list[T]:
-        """Each row ``query`` gives with ``asked`` as its named parameters, made
-        into what the caller wants by ``make``."""
-        return [make(row) for row in self.db.execute(query, asked)]
 
     def add_documents(self, source: str, found: Iterable[Document], now: float) -> int:
         """Record each document as seen at ``now``. Returns how many were new."""
@@ -359,7 +342,8 @@ class Store:
             "max_unanswered": MAX_UNANSWERED,
             "most": most,
         }
-        return self._select(_PENDING, asked, _pending)
+        rows = self.db.execute(_PENDING, asked).fetchall()
+        return [Pending(row["id"], row["url"], row["text"], row["owed"]) for row in rows]
 
     def ask_cost(self, model: str) -> float | None:
         """Dollars one ask of ``model`` has cost on average, or None before
@@ -404,7 +388,9 @@ class Store:
 
     def unscreened(self, pipeline: str, most: int) -> list[Pending]:
         """Up to ``most`` documents with no screen under ``pipeline``, newest first."""
-        return self._select(_UNSCREENED, {"pipeline": pipeline, "most": most}, _pending)
+        unscreened = self.db.execute(_UNSCREENED, {"pipeline": pipeline, "most": most})
+        # A screen is one ask, owed once.
+        return [Pending(id_, url, text, owed=1) for id_, url, text, _ in unscreened]
 
     def add_screen(self, document_id: str, pipeline: str, verdict: dict[str, Any]) -> None:
         """What L1 and L2 made of a document under ``pipeline``."""
@@ -434,8 +420,10 @@ class Store:
     def unlabelled(self, labeller: str, prompt_sha: str, most: int) -> list[Unlabelled]:
         """Up to ``most`` documents ``labeller`` owes a label on under
         ``prompt_sha``, newest first, with the runs it has failed on each."""
-        asked = {"labeller": labeller, "prompt_sha": prompt_sha, "most": most}
-        return self._select(_UNLABELLED, asked, _unlabelled)
+        owed = self.db.execute(
+            _UNLABELLED, {"labeller": labeller, "prompt_sha": prompt_sha, "most": most}
+        )
+        return [Unlabelled(id=row[0], text=row[1], failures=row[2]) for row in owed]
 
     def add_label(
         self,

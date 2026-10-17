@@ -296,3 +296,36 @@ def test_a_report_scores_judges_and_shows_no_document(store: Store) -> None:
     assert judge.split()[1:] == ["1/1", "0/0", "1/1", "0/0"]
     l2 = next(line for line in text.splitlines() if line.startswith("refused at L2"))
     assert l2.split()[3:] == ["1/1", "0/0", "0/1", "0/0"]
+
+
+def _fake_claude(tmp_path: Path, body: str) -> None:
+    fake = tmp_path / "claude"
+    fake.write_text(f"#!/bin/sh\n{body}\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+
+
+@pytest.mark.parametrize(
+    ("body", "error"),
+    [
+        ("cat >/dev/null; exit 1", "exit 1"),  # the token refused, the limit reached
+        ("cat >/dev/null; echo not json", "JSONDecodeError"),
+        ("cat >/dev/null; sleep 5", "timeout"),
+    ],
+)
+def test_an_ask_that_fails_outright_says_how_and_nothing_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str, error: str
+) -> None:
+    _fake_claude(tmp_path, body)
+    monkeypatch.setenv("PATH", f"{tmp_path}:/usr/bin:/bin")
+    monkeypatch.setattr(labeller, "ASK_TIMEOUT", 0.5)
+    with pytest.raises(LabellerError, match=f"^{error}$"):
+        labeller.claude("m/opus", "a hostile document", {"a"})
+
+
+def test_without_claude_code_there_is_no_ask_and_no_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(LabellerError, match=r"^claude not found$"):
+        labeller.claude("m/opus", "message", {"a"})
+    assert labeller.main(["check"]) == 1
