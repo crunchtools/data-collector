@@ -42,12 +42,13 @@ those alone has the same fingerprint and owes nothing; Trentina releases
 often, and most releases change the gateway, not the pipeline. One that
 changes them owes the whole set again, about 250 documents × 4 judges × 3
 votes, around $3.50. A document that joins the set later costs a few asks
-the next night.
+in the next evaluation.
 
 The base image follows Trentina's releases on its own: Dependabot looks for
 a new Trentina image daily, and a non-major bump merges once `test` and the
-image's `check` pass ([deploying.md](deploying.md)). The nightly evaluation
-then pulls the new image and pays for the new fingerprint, if it is one.
+image's `check` pass ([deploying.md](deploying.md)). Evaluation is started
+by hand; the next one pulls the new image and pays for the new fingerprint,
+if it is one.
 
 ## Judge models and votes
 

@@ -7,13 +7,14 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
-- No systemd timers: Hermes starts the collect unit and the nightly target on
-  their schedules, as it does every crunchtools host job.
+- No systemd timers: Hermes starts the collect unit for a collection, as it
+  does every crunchtools host job. A collection is a set period (the first:
+  2026-10-08 to 10-22); labelling and evaluation run once after it, by hand.
 
 ## [0.3.0] - 2026-10-17
 
 ### Added
-- Labels (#9). Each night Claude Opus 5.5 and Claude Fable 5.1 label every
+- Labels (#9). Claude Opus 5.5 and Claude Fable 5.1 label every
   document attack, borderline or benign, run by Claude Code with no tools on
   the Claude subscription, from the `label` command. The image carries
   Claude Code's native binary, pinned by version and SHA-256. A label is final when they agree or a person decides.
@@ -26,7 +27,7 @@ All notable changes to this project are documented here. The format follows
   borderline, human-settled benign and a frozen benign sample) only.
 - `report`: each judge, and L1 and L2, scored against the labels. Numbers
   only.
-- Nightly label and evaluate units under a target, at 01:30.
+- Label and evaluate units under a target.
 
 ### Changed
 - `run` collects and screens; it no longer judges. Verdicts are owed again

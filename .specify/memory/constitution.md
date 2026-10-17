@@ -1,6 +1,6 @@
 # data-collector Constitution
 
-> **Version:** 1.2.0
+> **Version:** 1.3.0
 > **Ratified:** 2026-10-08
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.24.0
@@ -16,12 +16,13 @@ Jobs, in one image, that write to one SQLite file and serve nothing:
 
 - **Collector** (`Containerfile`): once a day it reads a sample of a feed
   where prompt injection is likely, stores each new document and screens it
-  with Trentina's L1 and L2 alone. Each night it runs Trentina's defense
-  pipeline, under each supported judge model, over the labelled evaluation
-  set, when the pipeline has changed since it last did.
-- **Labeller** (`label`, in the same image): each night Claude Code, with
-  no tools, labels each document for the answer key the verdicts are scored
-  against.
+  with Trentina's L1 and L2 alone, for the length of a collection. After
+  one it runs Trentina's defense pipeline, under each supported judge
+  model, over the labelled evaluation set, when the pipeline has changed
+  since it last did.
+- **Labeller** (`label`, in the same image): after a collection Claude
+  Code, with no tools, labels each document for the answer key the verdicts
+  are scored against.
 
 ## Base Image
 
@@ -83,3 +84,4 @@ only once both pass.
 | 1.0.0 | 2026-10-08 | Initial constitution |
 | 1.1.0 | 2026-10-17 | Labeller image; evaluation of the labelled set only; `review` the one place text is printed (#9) |
 | 1.2.0 | 2026-10-17 | One image: the labeller runs from the collector's, with Claude Code's native binary |
+| 1.3.0 | 2026-10-17 | Collections: daily collecting for a set period, then labelling and evaluation once |
