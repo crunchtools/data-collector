@@ -9,6 +9,8 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 - The image is rebuilt when Trentina's is, on the fleet's
   `parent-image-updated` event.
+- A non-major bump of the Trentina base is merged on its own once `test`
+  and the image's `check` pass, and Dependabot looks for one daily.
 
 ## [0.2.0] - 2026-10-08
 

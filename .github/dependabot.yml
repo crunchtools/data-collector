@@ -29,7 +29,10 @@ updates:
     ignore:
       - dependency-name: "crunchtools/constitution*"
 
+  # Daily, not weekly: Trentina's releases are what the collector measures,
+  # and dependabot-automerge.yml merges a non-major bump of it once the
+  # image's own check is green.
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
