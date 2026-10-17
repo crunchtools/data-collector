@@ -2,8 +2,10 @@
 ``report`` by hand, ``import`` earlier results, ``check`` and ``check-label``
 the image.
 
-Settings come from the environment, as the container is given them
-(``deploy/collector.env.example`` lists every one):
+Settings come from the environment, as the container is given them. Those
+below are every collector command's (``deploy/collector.env.example`` lists
+them); ``label`` has its own, in ``label.py`` and
+``deploy/labeller.env.example``:
 
 * ``COLLECTOR_DB``: the SQLite file. Default ``/data/collector.db``.
 * ``COLLECTOR_MODELS``: judge models for ``evaluate``, comma-separated,

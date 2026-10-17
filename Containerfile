@@ -20,12 +20,14 @@ import hashlib, os, sys, urllib.request
 version = os.environ["CLAUDE_CODE_VERSION"]
 pinned = os.environ["CLAUDE_CODE_SHA256"]
 url = f"https://downloads.claude.ai/claude-code-releases/{version}/linux-x64/claude"
-data = urllib.request.urlopen(url, timeout=300).read()
-digest = hashlib.sha256(data).hexdigest()
-if digest != pinned:
-    sys.exit(f"claude {version}: sha256 {digest}, pinned {pinned}")
-with open("/claude", "wb") as out:
-    out.write(data)
+sha = hashlib.sha256()
+with urllib.request.urlopen(url, timeout=300) as response, open("/claude", "wb") as out:
+    while chunk := response.read(1 << 20):
+        sha.update(chunk)
+        out.write(chunk)
+if sha.hexdigest() != pinned:
+    os.remove("/claude")
+    sys.exit(f"claude {version}: sha256 {sha.hexdigest()}, pinned {pinned}")
 os.chmod("/claude", 0o755)
 FETCH
 RUN /claude --version
