@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- Container base images pinned to `quay.io/hummingbird/python:3.14*` instead of
+  `latest`, which moved to Python 3.15.0 on 2026-10-20 (crunchtools/constitution#66).
 - No systemd timers: Hermes starts the collect unit for a collection, as it
   does every crunchtools host job. A collection is a set period (the first:
   2026-10-08 to 10-22); labelling and evaluation run once after it, by hand.
