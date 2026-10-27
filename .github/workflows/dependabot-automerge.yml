@@ -15,7 +15,7 @@ permissions:
 jobs:
   automerge:
     name: Dependabot
-    uses: crunchtools/constitution/.github/workflows/dependabot-automerge.yml@v1.26.0
+    uses: crunchtools/constitution/.github/workflows/dependabot-automerge.yml@v1.27.0
 
   # The fleet's job leaves the docker ecosystem to a human. This repo's base
   # image is Trentina, and following its releases is the point: a non-major
