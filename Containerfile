@@ -32,7 +32,7 @@ os.chmod("/claude", 0o755)
 FETCH
 RUN /claude --version
 
-FROM quay.io/crunchtools/trentina:1.16.0
+FROM quay.io/crunchtools/trentina:2.0.0
 
 LABEL maintainer="maintainer@crunchtools.com"
 LABEL description="Collects documents from hostile feeds and records Trentina's verdict on each"
