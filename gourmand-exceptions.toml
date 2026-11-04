@@ -24,3 +24,14 @@ check = "hidden_env_config"
 path = "src/data_collector/label.py"
 classification = "by_design"
 justification = "Labelling's only configuration surface is its environment (constitution XIV), as for the collector. Every variable read is listed in this module's docstring and in deploy/labeller.env.example; none is hidden."
+
+# Ruff is not missing; it moved. Gourmand's IF001 looks for a literal
+# `ruff-check` hook id, and under python-sdlc (constitution XII, v1.30.0) ruff
+# runs inside the `sdlc-commit` hook, configured by [tool.ruff] in
+# pyproject.toml. Same precedent as trentina.
+[[exceptions]]
+check = "linter_configuration"
+path = ".pre-commit-config.yaml"
+pattern = "ruff-check"
+justification = "ruff runs inside the sdlc-commit hook from python-sdlc (constitution XII v1.30.0), configured by [tool.ruff] in pyproject.toml; Gourmand looks for a literal ruff hook id"
+classification = "by_design"
