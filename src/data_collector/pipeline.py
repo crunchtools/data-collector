@@ -23,10 +23,10 @@ import httpx
 import trentina
 from trentina.config import get_config
 from trentina.defense import defend
-from trentina.egress import open_guarded
 from trentina.errors import TrentinaError
 from trentina.perimeter_db import PERIMETER_VERSION, perimeter_stamp
 from trentina.quarantine.packs import GENERIC_ID, pack_for
+from trentina.reach.egress import open_guarded
 
 from .feed import FeedError
 
