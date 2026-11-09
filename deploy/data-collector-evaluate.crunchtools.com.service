@@ -1,4 +1,6 @@
 [Unit]
+Requires=srv-secrets@data-collector.crunchtools.com.service
+After=srv-secrets@data-collector.crunchtools.com.service
 Description=data-collector: judge the evaluation set under the current Trentina pipeline
 Wants=network-online.target
 After=network-online.target data-collector-label.crunchtools.com.service
@@ -16,7 +18,7 @@ ExecStart=/usr/bin/podman run \
     --memory=2g --memory-swap=2g \
     --read-only --tmpfs /tmp \
     --cap-drop=all --security-opt=no-new-privileges \
-    --env-file /srv/data-collector.crunchtools.com/config/collector.env \
+    --env-file /run/srv-secrets/data-collector.crunchtools.com/collector.env \
     -v /srv/data-collector.crunchtools.com/data:/data:Z \
     quay.io/crunchtools/data-collector:latest evaluate
 # An evaluation killed by the timeout must not go on spending.
