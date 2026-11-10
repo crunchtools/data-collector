@@ -1,6 +1,8 @@
 [Unit]
 Description=data-collector: label documents with Claude Code, for the answer key
 Wants=network-online.target
+Requires=srv-secrets@data-collector.crunchtools.com.service
+After=srv-secrets@data-collector.crunchtools.com.service
 After=network-online.target
 
 [Service]
@@ -20,7 +22,7 @@ ExecStart=/usr/bin/podman run \
     --read-only --tmpfs /tmp \
     --cap-drop=all --security-opt=no-new-privileges \
     -e HOME=/tmp/home \
-    --env-file /srv/data-collector.crunchtools.com/config/labeller.env \
+    --env-file /run/srv-secrets/data-collector.crunchtools.com/collector.env \
     -v /srv/data-collector.crunchtools.com/data:/data:Z \
     quay.io/crunchtools/data-collector:latest label
 ExecStopPost=-/usr/bin/podman rm -f data-collector-label.crunchtools.com
