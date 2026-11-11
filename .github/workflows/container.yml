@@ -1,0 +1,40 @@
+name: Container
+
+# Build once per change, gate the pushed digest, promote what was tested.
+# The image is built on Trentina's and is only ever built here: nothing is
+# built or pushed from a workstation.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  repository_dispatch:
+    types: [parent-image-updated]  # Trentina's image was rebuilt
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday rebuild
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  container:
+    uses: crunchtools/constitution/.github/workflows/container-release.yml@v1.39.1
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      image: quay.io/crunchtools/data-collector
+      boot: command
+      # No real key and no model call: Trentina imports, its classifier loads
+      # and judges one sentence, and each configured judge model is the one
+      # Trentina would ask, with a prompt pack of its own. Then Claude Code
+      # runs as the image's user and the labelling prompt and schema are
+      # packaged. Read-only root, as the host runs it.
+      boot-command: |
+        set -e
+        podman run --rm --read-only --tmpfs /tmp -e OPENROUTER_API_KEY=not-a-key "$IMAGE" check
+        podman run --rm --read-only --tmpfs /tmp -e HOME=/tmp/home "$IMAGE" check-label
+    secrets:
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+      QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
