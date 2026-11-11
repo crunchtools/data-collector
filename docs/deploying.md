@@ -72,10 +72,11 @@ shows it ([outcomes](evaluating.md#outcomes)).
 
 The collector's image is pinned to a Trentina version. Dependabot looks for
 a new Trentina image daily, and `dependabot-automerge.yml` merges a
-non-major bump once the "Image gates" ruleset's checks pass: `test`, and
-`build-and-push-quay`, which runs `check` inside the built image and so
-proves every judge still has a prompt pack. A major bump waits for a person.
-The merge pushes `:latest`, which the next evaluation pulls.
+non-major bump once the "Image gates" ruleset's checks pass: `test`, and the
+Container workflow's gates, which run `check` inside the pushed image digest
+and so prove every judge still has a prompt pack. A major bump waits for a
+person. The merge promotes the gated digest to `:main`; a `v*` tag moves
+`:latest`, which the next evaluation pulls.
 
 Claude Code is pinned in `Containerfile` by version and SHA-256, to the
 version Josui runs, and is bumped by hand.
