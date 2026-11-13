@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-13
+
+### Security
+- Trentina base 6.22.0, which ships pillow 13.0.0 (CVE-2026-112902) (#61).
+
 ## [0.4.1] - 2026-11-11
 
 ### Changed
