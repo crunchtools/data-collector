@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-17
+
 ### Changed
 - Sort the `trentina` import block in `pipeline.py` (ruff I001) ahead of python-sdlc 0.7.0's CI lint.
 
