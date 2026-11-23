@@ -36,3 +36,10 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    # Digest bumps of the pinned hummingbird/python builder still arrive; a
+    # new Python minor or major is an interpreter migration, done by hand.
+    ignore:
+      - dependency-name: "hummingbird/python"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
