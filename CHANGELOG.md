@@ -13,6 +13,9 @@ All notable changes to this project are documented here. The format follows
   (was v1.46.0) and grants it `issues: write`, so a failed scheduled rebuild
   opens an issue instead of only warning. A `v*` promote now also refuses an
   image whose `version` label names a different release of this repo.
+- The Claude Code builder stage pins `hummingbird/python:3.15-builder` by
+  digest, and Dependabot holds back its Python minor and major bumps: a new
+  interpreter is a migration, not a routine update.
 
 ## [0.5.0] - 2026-11-17
 

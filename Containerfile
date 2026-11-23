@@ -11,7 +11,7 @@
 # (platforms.linux-x64.checksum).
 #
 # Built, tested and pushed by GitHub Actions only.
-FROM quay.io/hummingbird/python:3.15-builder AS claude-code
+FROM quay.io/hummingbird/python:3.15-builder@sha256:b34ad63d9935a5432cb91e5816df4ad1dce19a53b82c7f6e85dd3d7c5931e183 AS claude-code
 USER 0
 ARG CLAUDE_CODE_VERSION=2.1.296
 ARG CLAUDE_CODE_SHA256=24972e3bc859fab2b46ed4c1e51f7d6130f06d3bd550811a114640de3370d0de
