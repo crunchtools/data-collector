@@ -57,3 +57,9 @@ skip = ["semgrep"]
 
 [tool.sdlc]
 repo-kinds = ["container-image"]
+
+[tool.sdlc.image]
+# Written by crunchtools/sdlc's scripts/convert_repo.py: moved from the workflows.
+image = "quay.io/crunchtools/data-collector"
+boot = "command"
+boot-command = "set -e\npodman run --rm --read-only --tmpfs /tmp -e OPENROUTER_API_KEY=not-a-key \"$IMAGE\" check\npodman run --rm --read-only --tmpfs /tmp -e HOME=/tmp/home \"$IMAGE\" check-label\n"
