@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- The Claude Code builder stage fetches and verifies the binary with curl and
+  sha256sum instead of a Python RUN heredoc, which hadolint cannot parse. sdlc's containerfile-lint now fails a Containerfile it cannot read
+  (crunchtools/sdlc#240), so the heredoc would have failed every PR check and
+  the release image job.
+
 ## [0.6.0] - 2026-11-24
 
 ### Changed
