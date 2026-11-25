@@ -35,3 +35,13 @@ path = ".pre-commit-config.yaml"
 pattern = "ruff-check"
 justification = "ruff runs inside the sdlc-commit hook from python-sdlc (constitution XII v1.30.0), configured by [tool.ruff] in pyproject.toml; Gourmand looks for a literal ruff hook id"
 classification = "by_design"
+
+# [tool.sdlc.ci.boot-gate-label] keeps the old boot gate's HOME, under /tmp. It is
+# a path inside sdlc's command container, where /tmp is the writable tmpfs and
+# the repo is read-only; never a host path.
+[[exceptions]]
+check = "absolute_paths"
+path = "pyproject.toml"
+pattern = "/tmp"
+justification = "boot-gate-label's HOME is the old gate's, under /tmp on the sdlc command container's tmpfs; a container path, never a host one"
+classification = "by_design"
