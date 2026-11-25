@@ -50,6 +50,30 @@ files = ["src"]
 module = "trentina.*"
 ignore_missing_imports = true
 
+# The boot gate: the two `podman run` lines boot-command used to run, run inside
+# the image this PR builds. sdlc 0.15 does not enforce
+# `[tool.sdlc.image] boot = "command"` (crunchtools/sdlc#118). The image has no
+# shell, so each is its own argv, with the original's environment. The original
+# also ran with --read-only; a `command` container's root filesystem is
+# writable (only /repo is read-only, /tmp is a tmpfs), so that is not checked.
+[tool.sdlc.ci]
+checks = ["data-collector-image", "boot-gate", "boot-gate-label"]
+
+[tool.sdlc.ci.data-collector-image]
+kind = "image-build"
+
+[tool.sdlc.ci.boot-gate]
+kind = "command"
+image = "localhost/data-collector:sdlc"
+argv = ["python", "-m", "data_collector", "check"]
+env = { OPENROUTER_API_KEY = "not-a-key" }
+
+[tool.sdlc.ci.boot-gate-label]
+kind = "command"
+image = "localhost/data-collector:sdlc"
+argv = ["python", "-m", "data_collector", "check-label"]
+env = { HOME = "/tmp/home" }
+
 [tool.sdlc.push]
 # No in-repo Semgrep rules: the check exits 2 when .semgrep is absent rather
 # than scanning nothing and calling it a pass.
@@ -61,5 +85,7 @@ repo-kinds = ["container-image"]
 [tool.sdlc.image]
 # Written by crunchtools/sdlc's scripts/convert_repo.py: moved from the workflows.
 image = "quay.io/crunchtools/data-collector"
-boot = "command"
-boot-command = "set -e\npodman run --rm --read-only --tmpfs /tmp -e OPENROUTER_API_KEY=not-a-key \"$IMAGE\" check\npodman run --rm --read-only --tmpfs /tmp -e HOME=/tmp/home \"$IMAGE\" check-label\n"
+# No HEALTHCHECK, and the container is a one-shot collector: the boot gate is the
+# [tool.sdlc.ci] boot-gate and boot-gate-label checks against this PR's built image.
+boot = "none"
+boot-none-reason = "no HEALTHCHECK and no server to hold open; the boot gate is the [tool.sdlc.ci] boot-gate and boot-gate-label checks against this PR's built image"
